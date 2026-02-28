@@ -29,3 +29,6 @@ Thumbs.db
 .cache/
 .parcel-cache/
 .turbo/
+
+# Analyze Project
+quiz-auswertung/

@@ -15,6 +15,7 @@ Interaktiver CFC-Editor für die Masterarbeit mit Fokus auf visuelles Modelliere
 - Dark/Light Theme
 - Undo/Redo mit Historie (`Ctrl+Z` / `Ctrl+Y`)
 - Import/Export + Roundtrip über mehrere Formate
+- Quiz-Modus mit aufgabenbasierten Graph-Checks (direkt im Prototyp)
 
 ## Unterstützte Formate
 
@@ -67,6 +68,25 @@ Danach im Browser z. B. `http://localhost:3000` öffnen.
 
 - Die angezeigte Execution Order basiert auf `src/core/graph/executionOrder.ts`.
 - Beim Export wird dieselbe Logik verwendet (inkl. ausgeschlossener Node-Typen), damit Anzeige und serialisierte Daten konsistent sind.
+
+## Quiz-Modus für Aufgaben
+
+- Oben in der Toolbar auf `Quiz-Modus` klicken.
+- Aufgabe auswählen.
+- Teilnehmende bearbeiten ausschließlich das Datenformat (Import/Export).
+- Mit `Prüfen` wird der aktuelle Graph gegen die Aufgabe validiert.
+
+Die Aufgaben sind aktuell in `src/quiz/sampleQuiz.ts` als `SAMPLE_QUIZ_TASKS` hinterlegt.
+
+### Datenformat einer Quiz-Aufgabe
+
+Jede Aufgabe hat:
+
+- `title`, `description`
+- `initialGraph` (Startzustand)
+- `criteria` (z. B. `requiredNodes`, `requiredConnections`, `exactNodeCount`)
+
+Dadurch lassen sich konkrete Übungen modellieren wie „Füge eine Box an x/y ein“ oder „Erzeuge eine bestimmte Verbindung“.
 
 ## Erweiterung um neue Formate
 

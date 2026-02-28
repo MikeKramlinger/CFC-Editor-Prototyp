@@ -37,6 +37,7 @@ interface GraphInteractionControllerOptions {
   setPanState: (state: PanState | null) => void;
   getSkipNextCanvasClick: () => boolean;
   setSkipNextCanvasClick: (value: boolean) => void;
+  getIsInteractionLocked: () => boolean;
   isAdditiveSelection: (event: MouseEvent) => boolean;
   closeNodeEditDialog: () => void;
   clientToGraphPxX: (clientX: number) => number;
@@ -80,7 +81,7 @@ export const installGraphInteractionController = (options: GraphInteractionContr
 
     options.closeNodeEditDialog();
 
-    if (event.shiftKey) {
+    if (event.shiftKey && !options.getIsInteractionLocked()) {
       options.setMarqueeSelection({
         startX: options.clientToGraphPxX(event.clientX),
         startY: options.clientToGraphPxY(event.clientY),

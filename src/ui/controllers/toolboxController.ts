@@ -14,6 +14,8 @@ export interface ToolboxController {
   setSelectedType: (type: CfcNodeType) => void;
   getDraggedType: () => CfcNodeType | null;
   clearDraggedType: () => void;
+  getIsCollapsed: () => boolean;
+  setCollapsed: (collapsed: boolean) => void;
 }
 
 export const createToolboxController = (options: ToolboxControllerOptions): ToolboxController => {
@@ -97,6 +99,11 @@ export const createToolboxController = (options: ToolboxControllerOptions): Tool
     getDraggedType: () => draggedType,
     clearDraggedType: () => {
       draggedType = null;
+    },
+    getIsCollapsed: () => isCollapsed,
+    setCollapsed: (collapsed) => {
+      isCollapsed = collapsed;
+      updateVisibility();
     },
   };
 };

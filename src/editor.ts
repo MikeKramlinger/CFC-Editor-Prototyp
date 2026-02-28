@@ -107,6 +107,7 @@ export class CfcEditor {
   private routingCacheVersion = 0;
   private readonly astarRouteCache = new Map<string, { version: number; route: GridPoint[] | null }>();
   private clipboard: GraphClipboard | null = null;
+  private isInteractionLocked = false;
 
   private ensureUniqueGraphIds(): void {
     const seenNodeIds = new Set<string>();
@@ -225,6 +226,7 @@ export class CfcEditor {
       setSkipNextCanvasClick: (value) => {
         this.skipNextCanvasClick = value;
       },
+      getIsInteractionLocked: () => this.isInteractionLocked,
       isAdditiveSelection: this.isAdditiveSelection.bind(this),
       closeNodeEditDialog: () => this.nodeEditDialogController.close(),
       clientToGraphPxX: this.clientToGraphPxX.bind(this),
@@ -349,6 +351,20 @@ export class CfcEditor {
     return this.routingMode;
   }
 
+  setInteractionLocked(locked: boolean): void {
+    this.isInteractionLocked = locked;
+    if (!locked) {
+      return;
+    }
+
+    this.dragState = null;
+    this.connectionDrag = null;
+    this.marqueeSelection = null;
+    this.panState = null;
+    this.nodeEditDialogController.close();
+    this.render();
+  }
+
   toggleRoutingMode(): RoutingMode {
     this.routingMode = this.routingMode === "bezier" ? "astar" : "bezier";
     this.render();
@@ -396,6 +412,9 @@ export class CfcEditor {
   }
 
   addNodeByType(nodeType: CfcNodeType): void {
+    if (this.isInteractionLocked) {
+      return;
+    }
     const before = this.getGraph();
     const nextIndex = getNextSerialForPrefix(
       "N",
@@ -424,6 +443,9 @@ export class CfcEditor {
   }
 
   addNodeAtCursorByType(nodeType: CfcNodeType): void {
+    if (this.isInteractionLocked) {
+      return;
+    }
     if (!this.lastCursorUnits) {
       this.addNodeByType(nodeType);
       return;
@@ -457,6 +479,9 @@ export class CfcEditor {
   }
 
   addNodeFromToolbox(nodeType: CfcNodeType, clientX: number, clientY: number): void {
+    if (this.isInteractionLocked) {
+      return;
+    }
     const before = this.getGraph();
     const nextIndex = getNextSerialForPrefix(
       "N",
@@ -497,6 +522,9 @@ export class CfcEditor {
   }
 
   deleteSelected(): void {
+    if (this.isInteractionLocked) {
+      return;
+    }
     const selectedNodeIds = new Set(this.selectedNodeIds);
     const selectedConnectionIds = new Set(this.selectedConnectionIds);
 
@@ -521,6 +549,9 @@ export class CfcEditor {
   }
 
   clearSelection(): void {
+    if (this.isInteractionLocked) {
+      return;
+    }
     this.selectedNodeIds.clear();
     this.selectedConnectionIds.clear();
     this.nodeEditDialogController.close();
@@ -528,6 +559,9 @@ export class CfcEditor {
   }
 
   copySelection(): boolean {
+    if (this.isInteractionLocked) {
+      return false;
+    }
     if (this.selectedNodeIds.size === 0) {
       this.options.onStatus("Keine Boxen ausgewählt zum Kopieren.");
       return false;
@@ -545,6 +579,9 @@ export class CfcEditor {
   }
 
   pasteSelection(): boolean {
+    if (this.isInteractionLocked) {
+      return false;
+    }
     if (!this.clipboard || this.clipboard.nodes.length === 0) {
       this.options.onStatus("Zwischenablage ist leer.");
       return false;
@@ -621,6 +658,9 @@ export class CfcEditor {
   }
 
   selectAll(): void {
+    if (this.isInteractionLocked) {
+      return;
+    }
     this.selectedNodeIds.clear();
     this.selectedConnectionIds.clear();
     this.nodeEditDialogController.close();
@@ -800,11 +840,15 @@ export class CfcEditor {
       if (!node.type) {
         node.type = DEFAULT_NODE_TYPE;
       }
+      const template = getNodeTemplateByType(node.type);
       node.x = this.clampUnitToNonNegative(node.x);
       node.y = this.clampUnitToNonNegative(node.y);
-      node.width = this.snapDimensionToGrid(node.width);
-      node.height = this.snapDimensionToGrid(node.height);
-      fitNodeWidthToLabel(node);
+      if (node.width < template.width) {
+        node.width = template.width;
+      }
+      if (node.height < template.height) {
+        node.height = template.height;
+      }
     });
   }
 
@@ -905,15 +949,27 @@ export class CfcEditor {
       getExecutionOrderByNodeId: this.getExecutionOrderByNodeId.bind(this),
       unitToPx: this.unitToPx.bind(this),
       onOutputPortPointerDown: (nodeId, portId, clientX, clientY) => {
+        if (this.isInteractionLocked) {
+          return;
+        }
         this.startConnectionDrag(nodeId, portId, "output", clientX, clientY);
       },
       onInputPortPointerDown: (nodeId, portId, clientX, clientY) => {
+        if (this.isInteractionLocked) {
+          return;
+        }
         this.startConnectionDrag(nodeId, portId, "input", clientX, clientY);
       },
       onNodeDoubleClick: (node) => {
+        if (this.isInteractionLocked) {
+          return;
+        }
         this.nodeEditDialogController.open(node);
       },
       onNodePointerDown: (node, event) => {
+        if (this.isInteractionLocked) {
+          return;
+        }
         this.handleNodePointerDown(node, event);
       },
     });
@@ -946,6 +1002,9 @@ export class CfcEditor {
         );
       },
       onConnectionClick: (connectionId, event) => {
+        if (this.isInteractionLocked) {
+          return;
+        }
         this.handleConnectionClick(connectionId, event);
       },
     });
@@ -1090,6 +1149,9 @@ export class CfcEditor {
     clientX: number,
     clientY: number,
   ): void {
+    if (this.isInteractionLocked) {
+      return;
+    }
     this.connectionDrag = beginConnectionDrag({
       fromNodeId,
       fromPort,

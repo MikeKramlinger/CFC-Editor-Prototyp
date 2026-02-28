@@ -9,18 +9,32 @@
   <body>
     <main class="layout">
       <section class="toolbar">
-        <h1>CFC-Editor Prototyp</h1>
-        <div class="toolbar__row">
-          <button id="routing-mode" type="button">Routing: Bezier</button>
-          <button id="bulk-menu-toggle" type="button" aria-expanded="false" aria-controls="bulk-menu">Mehrfach erstellen</button>
+        <div class="toolbar__header">
+          <h1>CFC-Editor Prototyp</h1>
           <button id="theme-toggle" type="button" aria-pressed="false" aria-label="Dark Theme aktivieren">🌙 Dark</button>
         </div>
-        <div class="toolbar__row">
+        <div class="toolbar__row toolbar__row--main">
+          <button id="routing-mode" type="button">Routing: Bezier</button>
+          <button id="bulk-menu-toggle" type="button" aria-expanded="false" aria-controls="bulk-menu">Mehrfach erstellen</button>
           <label for="format-select">Datenformat</label>
           <select id="format-select"></select>
           <button id="export-data" type="button">Export</button>
           <button id="import-data" type="button">Import</button>
           <button id="roundtrip" type="button">Roundtrip-Test</button>
+          <button id="quiz-toggle" type="button" aria-expanded="false" aria-controls="quiz-menu">Quiz-Modus</button>
+        </div>
+        <div id="quiz-menu" class="quiz-menu" hidden>
+          <div class="toolbar__row">
+            <label for="quiz-task-select">Aufgabe</label>
+            <select id="quiz-task-select"></select>
+            <button id="quiz-check" type="button">Prüfen</button>
+            <button id="quiz-next" type="button">Nächste</button>
+            <button id="quiz-end" type="button">Quiz beenden</button>
+          </div>
+          <div id="quiz-panel" class="quiz-panel">
+            <p id="quiz-description" class="quiz-description"></p>
+            <p id="quiz-feedback" class="quiz-feedback" aria-live="polite"></p>
+          </div>
         </div>
         <div id="bulk-menu" class="bulk-menu" hidden>
           <label for="bulk-box-count">Anzahl Boxen</label>
@@ -57,12 +71,26 @@
       <section class="data-area">
         <div class="data-area__header">
           <label for="data-text">Daten</label>
+          <div id="quiz-timer-inline" class="quiz-timer-inline" hidden>
+            <span><strong id="quiz-task-timer">00:00</strong></span>
+            <button id="quiz-timer-toggle" type="button">Pause</button>
+            <span id="quiz-task-locked" class="quiz-task-locked" title="Aufgabe ist abgeschlossen und gesperrt" hidden>🔒</span>
+          </div>
           <button id="data-toggle" type="button" aria-expanded="false" aria-label="Datenbereich vergrößern">⤢</button>
         </div>
         <div class="data-editor">
           <pre id="data-lines" class="data-lines" aria-hidden="true">1</pre>
           <textarea id="data-text" spellcheck="false"></textarea>
         </div>
+        <button
+          id="quiz-check-floating"
+          class="quiz-check-floating"
+          type="button"
+          aria-label="Antwort prüfen"
+          title="Antwort prüfen"
+          tabindex="-1"
+          hidden
+        >➤</button>
         <p id="metrics" class="metrics" aria-live="polite"></p>
       </section>
     </main>

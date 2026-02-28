@@ -1,5 +1,5 @@
 import type { CfcFormatAdapter } from "../../formats/types.js";
-import type { CfcGraph } from "../../model.js";
+import { getNodeTemplateByType, type CfcGraph } from "../../model.js";
 
 type UiTheme = "light" | "dark";
 type RoutingMode = "astar" | "bezier";
@@ -62,6 +62,12 @@ const formatKb = (value: number): string => `${value.toFixed(2)} KB`;
 
 const formatMs = (value: number): string => `${value.toFixed(2)} ms`;
 
+const hasNodeBelowMinimumSize = (graph: CfcGraph): boolean =>
+  graph.nodes.some((node) => {
+    const template = getNodeTemplateByType(node.type);
+    return node.width < template.width || node.height < template.height;
+  });
+
 export const createToolbarController = (options: ToolbarControllerOptions): ToolbarController => {
   let isBulkMenuOpen = false;
 
@@ -77,8 +83,13 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
     try {
       const adapter = options.getCurrentAdapter();
       const graph = adapter.deserialize(options.getDataText());
-      options.setCurrentGraph(graph);
+      const shouldSyncDataText = hasNodeBelowMinimumSize(graph);
       options.loadGraph(graph);
+      const normalizedGraph = options.getCurrentGraph();
+      options.setCurrentGraph(normalizedGraph);
+      if (shouldSyncDataText) {
+        options.setDataText(adapter.serialize(normalizedGraph));
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       options.setMetrics(`Import fehlgeschlagen: ${message}`);

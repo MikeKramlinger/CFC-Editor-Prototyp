@@ -44,6 +44,27 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
     options.dataLines.scrollTop = options.dataText.scrollTop;
   });
 
+  options.dataText.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") {
+      return;
+    }
+
+    event.preventDefault();
+    options.dataText.focus();
+
+    const insertedViaCommand = typeof document.execCommand === "function"
+      ? document.execCommand("insertText", false, "\t")
+      : false;
+
+    if (!insertedViaCommand) {
+      const start = options.dataText.selectionStart;
+      const end = options.dataText.selectionEnd;
+      options.dataText.setRangeText("\t", start, end, "end");
+    }
+
+    updateLineNumbers();
+  });
+
   updateVisibility();
   updateLineNumbers();
 
@@ -52,7 +73,23 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
       options.metrics.textContent = text;
     },
     setDataText: (value) => {
+      const isFocused = document.activeElement === options.dataText;
+      const previousSelectionStart = options.dataText.selectionStart;
+      const previousSelectionEnd = options.dataText.selectionEnd;
+      const previousScrollTop = options.dataText.scrollTop;
+      const previousScrollLeft = options.dataText.scrollLeft;
+
       options.dataText.value = value;
+
+      if (isFocused) {
+        const maxIndex = options.dataText.value.length;
+        const nextSelectionStart = Math.min(previousSelectionStart, maxIndex);
+        const nextSelectionEnd = Math.min(previousSelectionEnd, maxIndex);
+        options.dataText.setSelectionRange(nextSelectionStart, nextSelectionEnd);
+      }
+
+      options.dataText.scrollTop = previousScrollTop;
+      options.dataText.scrollLeft = previousScrollLeft;
       updateLineNumbers();
     },
     getDataText: () => options.dataText.value,

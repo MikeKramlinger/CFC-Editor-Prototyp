@@ -41,8 +41,16 @@ body {
   position: relative;
 }
 
+.toolbar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
 .toolbar h1 {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 18px;
 }
 
@@ -54,8 +62,28 @@ body {
   margin-bottom: 8px;
 }
 
+.toolbar__row--main {
+  max-height: 120px;
+  opacity: 1;
+  transform: translateY(0);
+  overflow: hidden;
+  transition: max-height 180ms ease, opacity 180ms ease, transform 180ms ease, margin-bottom 180ms ease;
+}
+
 .toolbar__row:last-child {
   margin-bottom: 0;
+}
+
+.toolbar.quiz-locked .toolbar__row--main {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  margin-bottom: 0;
+  pointer-events: none;
+}
+
+.toolbar.quiz-locked {
+  padding-top: 8px;
 }
 
 .bulk-menu {
@@ -75,6 +103,31 @@ body {
 }
 
 .bulk-menu[hidden] {
+  display: none;
+}
+
+.quiz-menu {
+  margin-bottom: 8px;
+}
+
+.quiz-menu[hidden] {
+  display: none;
+}
+
+.quiz-timer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid #d4d7dd;
+  border-radius: 8px;
+  background: #f8f9fc;
+  font-size: 13px;
+}
+
+.quiz-timer-bar[hidden] {
   display: none;
 }
 
@@ -140,6 +193,7 @@ input[type="number"]:hover {
   display: grid;
   grid-template-columns: 240px 1fr;
   height: 100%;
+  transition: grid-template-columns 220ms ease;
 }
 
 .workspace.toolbox-collapsed {
@@ -151,6 +205,7 @@ input[type="number"]:hover {
   padding: 10px;
   overflow: auto;
   background: #fbfcfe;
+  transition: padding 220ms ease, opacity 220ms ease;
 }
 
 .toolbox__header {
@@ -171,6 +226,17 @@ input[type="number"]:hover {
   padding: 4px 6px;
   font-size: 12px;
   line-height: 1;
+}
+
+.toolbox-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  border-color: #b9bfca;
+  background: #f3f5f9;
+}
+
+.toolbox-toggle:disabled:hover {
+  border-color: #b9bfca;
 }
 
 .workspace.toolbox-collapsed .toolbox {
@@ -657,6 +723,7 @@ input[type="number"]:hover {
   grid-template-rows: auto 1fr auto auto;
   gap: 8px;
   min-height: 220px;
+  position: relative;
 }
 
 .data-area__header {
@@ -664,6 +731,40 @@ input[type="number"]:hover {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.quiz-timer-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 3px 8px;
+  border: 1px solid #d4d7dd;
+  border-radius: 999px;
+  background: #f8f9fc;
+  font-size: 12px;
+}
+
+.quiz-timer-inline strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.quiz-timer-inline.is-completed strong {
+  color: #2f9e44;
+}
+
+.quiz-timer-inline[hidden] {
+  display: none;
+}
+
+.quiz-timer-inline #quiz-timer-toggle {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.quiz-task-locked {
+  font-size: 13px;
+  line-height: 1;
 }
 
 .data-area__header label {
@@ -686,6 +787,27 @@ input[type="number"]:hover {
   overflow: hidden;
   height: 220px;
   min-height: 0;
+  position: relative;
+}
+
+.data-editor.is-readonly {
+  border-color: #8f96a3;
+  box-shadow: inset 0 0 0 1px rgba(143, 150, 163, 0.35);
+}
+
+.data-editor.is-readonly::after {
+  content: "🔒";
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 13px;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.data-editor.is-readonly textarea {
+  cursor: not-allowed;
+  background: #f2f4f8;
 }
 
 .layout.data-expanded .data-editor {
@@ -728,4 +850,48 @@ textarea {
   min-height: 18px;
   font-size: 12px;
   color: #5f6673;
+}
+
+.quiz-check-floating {
+  position: absolute;
+  right: 25px;
+  bottom: 60px;
+  z-index: 35;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: 999px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.quiz-check-floating[hidden] {
+  display: none;
+}
+
+.quiz-panel {
+  border: 1px solid #d4d7dd;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+  margin-top: 8px;
+}
+
+.quiz-description,
+.quiz-feedback {
+  margin: 0;
+  font-size: 13px;
+}
+
+.quiz-description {
+  color: #5f6673;
+}
+
+.quiz-feedback {
+  margin-top: 6px;
+  font-weight: 600;
 }

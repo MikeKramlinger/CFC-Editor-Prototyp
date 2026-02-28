@@ -1,6 +1,10 @@
 import { CfcEditor } from "./editor.js";
 import { getNextSerialForPrefix } from "./core/editor/id.js";
 import { getAdapterById, listAdapters } from "./formats/registry.js";
+import { createQuizPersistence } from "./quiz/persistence.js";
+import { SAMPLE_QUIZ_TASKS } from "./quiz/sampleQuiz.js";
+import { createQuizSession } from "./quiz/session.js";
+import { isGraphQuizTask, type QuizTaskSessionState, type QuizTaskViewState } from "./quiz/types.js";
 import { createDataPanelController } from "./ui/controllers/dataPanelController.js";
 import { installKeyboardShortcutsController } from "./ui/controllers/keyboardShortcutsController.js";
 import { createToolbarController } from "./ui/controllers/toolbarController.js";
@@ -21,9 +25,26 @@ import {
 } from "./model.js";
 
 const canvas = query<HTMLDivElement>("#canvas");
+const toolbarSection = query<HTMLElement>(".toolbar");
 const toolbarUi = getToolbarUiElements();
 const toolboxUi = getToolboxUiElements();
 const dataPanelUi = getDataPanelUiElements();
+const dataArea = query<HTMLElement>(".data-area");
+const dataEditor = query<HTMLDivElement>(".data-editor");
+const quizToggleButton = query<HTMLButtonElement>("#quiz-toggle");
+const quizMenu = query<HTMLDivElement>("#quiz-menu");
+const quizTaskSelect = query<HTMLSelectElement>("#quiz-task-select");
+const quizCheckButton = query<HTMLButtonElement>("#quiz-check");
+const quizNextButton = query<HTMLButtonElement>("#quiz-next");
+const quizEndButton = query<HTMLButtonElement>("#quiz-end");
+const quizPanel = query<HTMLDivElement>("#quiz-panel");
+const quizDescription = query<HTMLParagraphElement>("#quiz-description");
+const quizFeedback = query<HTMLParagraphElement>("#quiz-feedback");
+const quizCheckFloatingButton = query<HTMLButtonElement>("#quiz-check-floating");
+const quizTimerInline = query<HTMLDivElement>("#quiz-timer-inline");
+const quizTaskTimer = query<HTMLElement>("#quiz-task-timer");
+const quizTimerToggleButton = query<HTMLButtonElement>("#quiz-timer-toggle");
+const quizTaskLocked = query<HTMLElement>("#quiz-task-locked");
 
 const THEME_STORAGE_KEY = "cfc-editor-theme";
 type UiTheme = "light" | "dark";
@@ -32,6 +53,103 @@ type ShortcutContext = "graph" | "data";
 let currentGraph: CfcGraph = createEmptyGraph();
 const initialSelectedToolboxType: CfcNodeType = "box";
 let lastShortcutContext: ShortcutContext = "graph";
+let isQuizModeActive = false;
+let toolboxCollapsedBeforeQuiz = false;
+let graphBeforeQuiz: CfcGraph | null = null;
+let dataTextBeforeQuiz = "";
+let activeTaskElapsedMs = 0;
+let activeTaskCompleted = false;
+let taskTimerRunning = false;
+let taskTimerStartedAtMs: number | null = null;
+let timerIntervalId: number | null = null;
+const quizSession = createQuizSession({ tasks: SAMPLE_QUIZ_TASKS });
+const quizPersistence = createQuizPersistence();
+
+const formatElapsed = (elapsedMs: number): string => {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
+const getElapsedMs = (): number => {
+  if (!taskTimerRunning || taskTimerStartedAtMs === null) {
+    return activeTaskElapsedMs;
+  }
+  return activeTaskElapsedMs + (Date.now() - taskTimerStartedAtMs);
+};
+
+const updateTimerLabel = (): void => {
+  quizTaskTimer.textContent = formatElapsed(getElapsedMs());
+};
+
+const stopTimerInterval = (): void => {
+  if (timerIntervalId !== null) {
+    window.clearInterval(timerIntervalId);
+    timerIntervalId = null;
+  }
+};
+
+const syncElapsedFromRunning = (): void => {
+  if (!taskTimerRunning || taskTimerStartedAtMs === null) {
+    return;
+  }
+  activeTaskElapsedMs += Date.now() - taskTimerStartedAtMs;
+  taskTimerStartedAtMs = Date.now();
+};
+
+const pauseTaskTimer = (): void => {
+  if (!taskTimerRunning || taskTimerStartedAtMs === null) {
+    return;
+  }
+  activeTaskElapsedMs += Date.now() - taskTimerStartedAtMs;
+  taskTimerStartedAtMs = null;
+  taskTimerRunning = false;
+  stopTimerInterval();
+  updateTimerLabel();
+};
+
+const startTaskTimer = (): void => {
+  if (activeTaskCompleted || taskTimerRunning) {
+    return;
+  }
+  taskTimerStartedAtMs = Date.now();
+  taskTimerRunning = true;
+  updateTimerLabel();
+  stopTimerInterval();
+  timerIntervalId = window.setInterval(() => {
+    updateTimerLabel();
+  }, 1000);
+};
+
+const stopAndResetTaskTimer = (): void => {
+  pauseTaskTimer();
+  activeTaskElapsedMs = 0;
+  activeTaskCompleted = false;
+  updateTimerLabel();
+};
+
+const applyTaskEditability = (): void => {
+  const locked = isQuizModeActive && activeTaskCompleted;
+  dataPanelUi.dataText.readOnly = locked;
+  dataPanelUi.dataText.setAttribute("aria-readonly", locked ? "true" : "false");
+  dataArea.classList.toggle("task-locked", locked);
+  dataEditor.classList.toggle("is-readonly", locked);
+  quizTimerInline.classList.toggle("is-completed", locked);
+  quizTaskLocked.hidden = !locked;
+  quizCheckButton.disabled = locked;
+  quizCheckFloatingButton.disabled = locked;
+  quizTimerToggleButton.hidden = locked;
+  quizTimerToggleButton.disabled = !isQuizModeActive || activeTaskCompleted;
+  quizTimerToggleButton.textContent = taskTimerRunning ? "Pause" : "Fortsetzen";
+};
+
+const markCurrentTaskCompleted = (): void => {
+  syncElapsedFromRunning();
+  activeTaskCompleted = true;
+  pauseTaskTimer();
+  applyTaskEditability();
+};
 
 const TOOLBOX_ICONS: Record<CfcNodeType, string> = {
   input: "⮕",
@@ -62,6 +180,13 @@ adapters.forEach((adapter) => {
   toolbarUi.formatSelect.append(option);
 });
 
+quizSession.getTasks().forEach((task, index) => {
+  const option = document.createElement("option");
+  option.value = String(index);
+  option.textContent = `${index + 1}. ${task.title}`;
+  quizTaskSelect.append(option);
+});
+
 const defaultAdapter = adapters[0]!;
 const getCurrentAdapter = () => getAdapterById(toolbarUi.formatSelect.value || defaultAdapter.id);
 
@@ -71,6 +196,190 @@ const editor = new CfcEditor(canvas, currentGraph, {
   },
   onStatus: () => undefined,
 });
+
+const createActiveQuizTaskSessionState = (): QuizTaskSessionState => ({
+  graph: editor.getGraph(),
+  dataText: dataPanel.getDataText(),
+  feedback: quizFeedback.textContent ?? "",
+  elapsedMs: getElapsedMs(),
+  isCompleted: activeTaskCompleted,
+});
+
+const serializeQuizGraph = (graph: CfcGraph): string => getCurrentAdapter().serialize(graph);
+
+const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
+  pauseTaskTimer();
+  editor.loadGraph(viewState.graph);
+  currentGraph = editor.getGraph();
+  dataPanel.setDataText(viewState.dataText);
+  activeTaskElapsedMs = viewState.elapsedMs;
+  activeTaskCompleted = viewState.isCompleted;
+  dataPanelUi.dataText.placeholder = viewState.task.kind === "open"
+    ? viewState.task.placeholder ?? "Antwort hier eingeben..."
+    : "";
+  const isOpenTask = viewState.task.kind === "open";
+  quizCheckButton.textContent = isOpenTask ? "Speichern" : "Prüfen";
+  quizCheckFloatingButton.setAttribute("title", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
+  quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
+  quizDescription.textContent = `${viewState.task.title}: ${viewState.task.description}`;
+  quizFeedback.textContent = viewState.feedback;
+  quizTaskSelect.value = String(viewState.index);
+  updateTimerLabel();
+  if (isQuizModeActive && !activeTaskCompleted) {
+    startTaskTimer();
+  }
+  applyTaskEditability();
+};
+
+const setQuizPanelOpen = (open: boolean): void => {
+  quizMenu.hidden = !open;
+  quizPanel.hidden = !open;
+  quizToggleButton.setAttribute("aria-expanded", open ? "true" : "false");
+};
+
+const setToolbarLockedState = (locked: boolean): void => {
+  const controls: Array<HTMLButtonElement | HTMLSelectElement> = [
+    toolbarUi.routingModeButton,
+    toolbarUi.bulkMenuToggleButton,
+    toolbarUi.formatSelect,
+    toolbarUi.exportButton,
+    toolbarUi.importButton,
+    toolbarUi.roundtripButton,
+  ];
+
+  controls.forEach((control) => {
+    control.disabled = locked;
+  });
+
+  if (locked) {
+    toolbarUi.bulkMenu.hidden = true;
+    toolbarUi.bulkMenuToggleButton.setAttribute("aria-expanded", "false");
+  }
+
+  toolbarSection.classList.toggle("quiz-locked", locked);
+};
+
+const setQuizModeActive = (active: boolean): void => {
+  if (active && !isQuizModeActive) {
+    graphBeforeQuiz = editor.getGraph();
+    dataTextBeforeQuiz = dataPanel.getDataText();
+  }
+
+  isQuizModeActive = active;
+  setToolbarLockedState(active);
+  editor.setInteractionLocked(active);
+
+  if (active) {
+    toolboxCollapsedBeforeQuiz = toolbox.getIsCollapsed();
+    toolbox.setCollapsed(true);
+    toolboxUi.toolboxToggleButton.disabled = true;
+  } else {
+    toolbox.setCollapsed(toolboxCollapsedBeforeQuiz);
+    toolboxUi.toolboxToggleButton.disabled = false;
+  }
+
+  setQuizPanelOpen(active);
+  quizCheckFloatingButton.hidden = !active;
+  quizTimerInline.hidden = !active;
+
+  if (!active) {
+    stopAndResetTaskTimer();
+    applyTaskEditability();
+    if (graphBeforeQuiz) {
+      editor.loadGraph(graphBeforeQuiz);
+      currentGraph = editor.getGraph();
+      dataPanel.setDataText(dataTextBeforeQuiz);
+    }
+    graphBeforeQuiz = null;
+    dataTextBeforeQuiz = "";
+    quizPersistence.clearQueuedAttempts();
+    quizSession.stop();
+  }
+};
+
+const importQuizDataIntoGraph = (): boolean => {
+  let importedGraph: CfcGraph;
+  let shouldSyncDataText = false;
+  try {
+    importedGraph = getCurrentAdapter().deserialize(dataPanel.getDataText());
+    shouldSyncDataText = importedGraph.nodes.some((node) => {
+      const template = getNodeTemplateByType(node.type);
+      return node.width < template.width || node.height < template.height;
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    quizFeedback.textContent = `❌ Ungültiges Datenformat: ${message}`;
+    quizSession.saveActiveState(createActiveQuizTaskSessionState());
+    return false;
+  }
+
+  editor.loadGraph(importedGraph);
+  currentGraph = editor.getGraph();
+  if (shouldSyncDataText) {
+    dataPanel.setDataText(getCurrentAdapter().serialize(currentGraph));
+  }
+  return true;
+};
+
+const runQuizCheck = (): void => {
+  const activeTask = quizSession.getActiveTask();
+  if (activeTaskCompleted) {
+    quizFeedback.textContent = "✅ Aufgabe ist bereits abgeschlossen und gesperrt.";
+    return;
+  }
+
+  const queueAttempt = (success: boolean, message: string, failedChecks?: string[], passedChecks?: string[]): void => {
+    quizPersistence.queueAttempt({
+      record: {
+        timestamp: new Date().toISOString(),
+        taskId: activeTask.id,
+        taskTitle: activeTask.title,
+        taskKind: activeTask.kind,
+        question: activeTask.description,
+        dataModelOrAnswer: dataPanel.getDataText(),
+        taskElapsedMs: getElapsedMs(),
+        taskCompleted: activeTaskCompleted,
+        result: {
+          success,
+          message,
+          failedChecks,
+          passedChecks,
+        },
+      },
+    });
+  };
+
+  if (!isGraphQuizTask(activeTask)) {
+    const saveMessage = activeTask.saveMessage ?? "💾 Antwort gespeichert.";
+    markCurrentTaskCompleted();
+    quizFeedback.textContent = saveMessage;
+    quizSession.saveActiveState(createActiveQuizTaskSessionState());
+    queueAttempt(true, saveMessage);
+    return;
+  }
+
+  if (!importQuizDataIntoGraph()) {
+    const invalidDataMessage = quizFeedback.textContent ?? "❌ Ungültiges Datenformat.";
+    queueAttempt(false, invalidDataMessage);
+    return;
+  }
+
+  const result = quizSession.evaluateActiveTask(currentGraph);
+
+  if (result.success) {
+    const successMessage = "✅ Aufgabe erfüllt.";
+    markCurrentTaskCompleted();
+    quizFeedback.textContent = successMessage;
+    quizSession.saveActiveState(createActiveQuizTaskSessionState());
+    queueAttempt(true, successMessage, result.failedChecks, result.passedChecks);
+    return;
+  }
+
+  const failedMessage = `❌ Noch nicht erfüllt: ${result.failedChecks.join(" | ")}`;
+  quizFeedback.textContent = failedMessage;
+  quizSession.saveActiveState(createActiveQuizTaskSessionState());
+  queueAttempt(false, failedMessage, result.failedChecks, result.passedChecks);
+};
 
 const getStoredTheme = (): UiTheme | null => {
   const value = localStorage.getItem(THEME_STORAGE_KEY);
@@ -220,6 +529,77 @@ const toolbar = createToolbarController({
   setMetrics: (value) => dataPanel.setMetrics(value),
 });
 
+quizToggleButton.addEventListener("click", () => {
+  if (isQuizModeActive) {
+    return;
+  }
+  setQuizModeActive(true);
+  stopAndResetTaskTimer();
+  quizPersistence.clearQueuedAttempts();
+  applyQuizTaskViewState(quizSession.start(serializeQuizGraph));
+});
+
+quizTaskSelect.addEventListener("change", () => {
+  if (!quizSession.isActive()) {
+    return;
+  }
+  const index = Number.parseInt(quizTaskSelect.value, 10);
+  if (Number.isNaN(index)) {
+    return;
+  }
+  applyQuizTaskViewState(
+    quizSession.selectTask(index, createActiveQuizTaskSessionState(), serializeQuizGraph),
+  );
+});
+
+quizTimerToggleButton.addEventListener("click", () => {
+  if (!isQuizModeActive || activeTaskCompleted) {
+    return;
+  }
+  if (taskTimerRunning) {
+    pauseTaskTimer();
+  } else {
+    startTaskTimer();
+  }
+  applyTaskEditability();
+});
+
+quizCheckButton.addEventListener("click", () => {
+  runQuizCheck();
+});
+
+quizCheckFloatingButton.addEventListener("click", () => {
+  runQuizCheck();
+});
+
+quizNextButton.addEventListener("click", () => {
+  if (!quizSession.isActive()) {
+    return;
+  }
+  applyQuizTaskViewState(quizSession.nextTask(createActiveQuizTaskSessionState(), serializeQuizGraph));
+});
+
+quizEndButton.addEventListener("click", () => {
+  pauseTaskTimer();
+  if (quizSession.isActive()) {
+    quizSession.saveActiveState(createActiveQuizTaskSessionState());
+  }
+
+  const snapshot = quizSession.getSnapshot();
+
+  void quizPersistence.flushSessionExport({
+    tasks: quizSession.getTasks(),
+    session: snapshot,
+  }).then((flushResult) => {
+    if (!flushResult.ok) {
+      dataPanel.setMetrics(`Quiz-Ergebnisse konnten nicht gespeichert werden: ${flushResult.reason}`);
+    } else {
+      dataPanel.setMetrics(`Quiz-Ergebnisse gespeichert: ${flushResult.fileName} (${flushResult.count} Versuch(e))`);
+    }
+    setQuizModeActive(false);
+  });
+});
+
 canvas.addEventListener(
   "wheel",
   (event: WheelEvent) => {
@@ -274,16 +654,56 @@ installKeyboardShortcutsController({
       element?.isContentEditable
     );
   },
-  onCopy: () => editor.copySelection(),
-  onPaste: () => editor.pasteSelection(),
-  onUndo: () => editor.undo(),
-  onRedo: () => editor.redo(),
+  onCopy: () => {
+    if (isQuizModeActive) {
+      return;
+    }
+    editor.copySelection();
+  },
+  onPaste: () => {
+    if (isQuizModeActive) {
+      return;
+    }
+    editor.pasteSelection();
+  },
+  onUndo: () => {
+    if (isQuizModeActive) {
+      return;
+    }
+    editor.undo();
+  },
+  onRedo: () => {
+    if (isQuizModeActive) {
+      return;
+    }
+    editor.redo();
+  },
   onSaveGraphContext: () => toolbar.triggerExport(),
   onSaveDataContext: () => toolbar.triggerImport(),
-  onSelectAll: () => editor.selectAll(),
-  onDeleteSelection: () => editor.deleteSelected(),
-  onClearSelection: () => editor.clearSelection(),
-  onAddNodeAtCursor: () => editor.addNodeAtCursorByType(toolbox.getSelectedType()),
+  onSelectAll: () => {
+    if (isQuizModeActive) {
+      return;
+    }
+    editor.selectAll();
+  },
+  onDeleteSelection: () => {
+    if (isQuizModeActive) {
+      return;
+    }
+    editor.deleteSelected();
+  },
+  onClearSelection: () => {
+    if (isQuizModeActive) {
+      return;
+    }
+    editor.clearSelection();
+  },
+  onAddNodeAtCursor: () => {
+    if (isQuizModeActive) {
+      return;
+    }
+    editor.addNodeAtCursorByType(toolbox.getSelectedType());
+  },
   onZoomIn: () => {
     editor.adjustZoom(0.1);
     toolbar.updateZoomLabel();
@@ -304,3 +724,6 @@ toolbarUi.formatSelect.addEventListener("change", () => {
 });
 
 dataPanel.setMetrics("");
+updateTimerLabel();
+applyTaskEditability();
+setQuizModeActive(false);

@@ -28,9 +28,10 @@ const isGraphShortcutContext = (
 export const installKeyboardShortcutsController = (options: KeyboardShortcutsControllerOptions): (() => void) => {
   const onKeyDown = (event: KeyboardEvent): void => {
     const graphContext = isGraphShortcutContext(options.isCursorInsideGraph(), options.getLastShortcutContext());
+    const isTypingTarget = options.isTypingTarget(event.target);
 
     if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "c") {
-      if (graphContext) {
+      if (graphContext && !isTypingTarget) {
         event.preventDefault();
         options.onCopy();
       }
@@ -38,7 +39,7 @@ export const installKeyboardShortcutsController = (options: KeyboardShortcutsCon
     }
 
     if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "v") {
-      if (graphContext) {
+      if (graphContext && !isTypingTarget) {
         event.preventDefault();
         options.onPaste();
       }
@@ -46,7 +47,7 @@ export const installKeyboardShortcutsController = (options: KeyboardShortcutsCon
     }
 
     if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
-      if (graphContext) {
+      if (graphContext && !isTypingTarget) {
         event.preventDefault();
         options.onUndo();
       }
@@ -54,7 +55,7 @@ export const installKeyboardShortcutsController = (options: KeyboardShortcutsCon
     }
 
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
-      if (graphContext) {
+      if (graphContext && !isTypingTarget) {
         event.preventDefault();
         options.onRedo();
       }
@@ -75,7 +76,7 @@ export const installKeyboardShortcutsController = (options: KeyboardShortcutsCon
       return;
     }
 
-    if (options.isTypingTarget(event.target)) {
+    if (isTypingTarget) {
       return;
     }
 
