@@ -1,0 +1,20 @@
+{
+  "name": "cfc-editor-prototyp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Einfacher CFC-Editor-Prototyp mit PLCopenXML-Roundtrip",
+  "scripts": {
+    "build": "tsc",
+    "start": "npx serve .",
+    "dev": "concurrently \"tsc --watch\" \"npx serve .\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "jsdom": "^28.1.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

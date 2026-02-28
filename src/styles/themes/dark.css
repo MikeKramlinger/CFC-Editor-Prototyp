@@ -1,0 +1,167 @@
+body[data-theme="dark"] .cfc-connection--fallback {
+  stroke: #7e8696;
+}
+
+body[data-theme="dark"] .cfc-port--drop-allowed {
+  border-color: #3fb950;
+  box-shadow: 0 0 0 2px rgba(63, 185, 80, 0.22);
+}
+
+body[data-theme="dark"] .cfc-port--drop-blocked {
+  border-color: #ff6b6b;
+  box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.22);
+}
+
+body[data-theme="dark"] {
+  color-scheme: dark;
+  background: #16181d;
+  color: #e8ebf2;
+}
+
+body[data-theme="dark"] .toolbar,
+body[data-theme="dark"] .data-area,
+body[data-theme="dark"] .editor-area {
+  background: #1f232b;
+  border-color: #3a4250;
+}
+
+body[data-theme="dark"] .layout.data-expanded .data-area {
+  background: #1f232b;
+  border-color: #3a4250;
+}
+
+body[data-theme="dark"] .bulk-menu {
+  background: #1f232b;
+  border-color: #4b5568;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+body[data-theme="dark"] .bulk-menu label {
+  color: #aeb8cc;
+}
+
+body[data-theme="dark"] button,
+body[data-theme="dark"] select,
+body[data-theme="dark"] input[type="number"] {
+  background: #2a303b;
+  border-color: #4b5568;
+  color: #e8ebf2;
+}
+
+body[data-theme="dark"] button:hover,
+body[data-theme="dark"] select:hover,
+body[data-theme="dark"] input[type="number"]:hover {
+  border-color: #6a7891;
+}
+
+body[data-theme="dark"] .toolbox {
+  background: #20242c;
+  border-right-color: #3a4250;
+}
+
+body[data-theme="dark"] .toolbox-item.active {
+  border-color: #7ea1ff;
+  background: #2f3f61;
+  color: #eef3ff;
+  box-shadow: inset 0 0 0 1px rgba(126, 161, 255, 0.32);
+}
+
+body[data-theme="dark"] .canvas {
+  background: #1b1f27;
+}
+
+body[data-theme="dark"] .cfc-graph-layer {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+}
+
+body[data-theme="dark"] .graph-zoom-overlay {
+  background: rgba(31, 35, 43, 0.9);
+  border-color: #4b5568;
+}
+
+body[data-theme="dark"] .cfc-node {
+  --node-bg: #2a303b;
+  --node-border: #8b97ae;
+  background: #2a303b;
+  border-color: #8b97ae;
+  color: #e8ebf2;
+}
+
+body[data-theme="dark"] .cfc-node[data-node-type="connection-mark-source"],
+body[data-theme="dark"] .cfc-node[data-node-type="connection-mark-sink"] {
+  --node-bg: #2a3448;
+  background: transparent;
+  border-color: #9aa7bf;
+}
+
+body[data-theme="dark"] .cfc-node[data-node-type="connection-mark-source"].selected,
+body[data-theme="dark"] .cfc-node[data-node-type="connection-mark-sink"].selected {
+  box-shadow: none;
+}
+
+body[data-theme="dark"] .cfc-node.selected {
+  --node-border: #7ea1ff;
+  --node-shadow-color: rgba(126, 161, 255, 0.28);
+  border-color: var(--node-border);
+  box-shadow: 0 0 0 2px var(--node-shadow-color);
+}
+
+body[data-theme="dark"] .cfc-node__id,
+body[data-theme="dark"] .cfc-node-edit-field,
+body[data-theme="dark"] .metrics,
+body[data-theme="dark"] .data-lines {
+  color: #aeb8cc;
+}
+
+body[data-theme="dark"] .cfc-node__order {
+  background: #2a303b;
+  border-color: rgba(63, 185, 80, 0.5);
+  color: #3fb950;
+}
+
+body[data-theme="dark"] .cfc-port {
+  background: #2a303b;
+  border-color: #8b97ae;
+}
+
+body[data-theme="dark"] .cfc-port--input-arrow {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 7px 0 7px 10px;
+  border-top-color: transparent;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  border-left-color: #8b97ae;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body[data-theme="dark"] .cfc-port--output {
+  background: #7ea1ff;
+}
+
+body[data-theme="dark"] .cfc-node-edit-dialog {
+  background: #1f232b;
+  border-color: #4b5568;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+body[data-theme="dark"] .cfc-node-edit-input,
+body[data-theme="dark"] textarea {
+  background: #242a34;
+  color: #e8ebf2;
+  border-color: #4b5568;
+}
+
+body[data-theme="dark"] .data-editor {
+  border-color: #4b5568;
+}
+
+body[data-theme="dark"] .data-lines {
+  background: #212733;
+  border-right-color: #3a4250;
+}

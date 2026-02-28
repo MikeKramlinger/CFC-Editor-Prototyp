@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CFC-Editor Prototyp</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="toolbar">
+        <h1>CFC-Editor Prototyp</h1>
+        <div class="toolbar__row">
+          <button id="routing-mode" type="button">Routing: Bezier</button>
+          <button id="bulk-menu-toggle" type="button" aria-expanded="false" aria-controls="bulk-menu">Mehrfach erstellen</button>
+          <button id="theme-toggle" type="button" aria-pressed="false" aria-label="Dark Theme aktivieren">🌙 Dark</button>
+        </div>
+        <div class="toolbar__row">
+          <label for="format-select">Datenformat</label>
+          <select id="format-select"></select>
+          <button id="export-data" type="button">Export</button>
+          <button id="import-data" type="button">Import</button>
+          <button id="roundtrip" type="button">Roundtrip-Test</button>
+        </div>
+        <div id="bulk-menu" class="bulk-menu" hidden>
+          <label for="bulk-box-count">Anzahl Boxen</label>
+          <input id="bulk-box-count" type="number" min="1" step="1" value="6" />
+          <label for="bulk-connection-count">Anzahl Verbindungen</label>
+          <input id="bulk-connection-count" type="number" min="0" step="1" value="10" />
+          <div class="bulk-menu__actions">
+            <button id="bulk-create" type="button">Erstellen</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="editor-area">
+        <div class="workspace">
+          <aside class="toolbox" aria-label="CFC Toolbox">
+            <div class="toolbox__header">
+              <h2>Toolbox</h2>
+              <button id="toolbox-toggle" class="toolbox-toggle" type="button" aria-expanded="true" aria-label="Toolbox einklappen">
+                &lt;
+              </button>
+            </div>
+            <div id="toolbox-list" class="toolbox-list"></div>
+          </aside>
+          <div id="canvas" class="canvas" aria-label="CFC Arbeitsbereich">
+            <div class="graph-zoom-overlay" aria-label="Zoom-Steuerung">
+              <button id="zoom-out" type="button">-</button>
+              <span id="zoom-value" class="zoom-value">100%</span>
+              <button id="zoom-in" type="button">+</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="data-area">
+        <div class="data-area__header">
+          <label for="data-text">Daten</label>
+          <button id="data-toggle" type="button" aria-expanded="false" aria-label="Datenbereich vergrößern">⤢</button>
+        </div>
+        <div class="data-editor">
+          <pre id="data-lines" class="data-lines" aria-hidden="true">1</pre>
+          <textarea id="data-text" spellcheck="false"></textarea>
+        </div>
+        <p id="metrics" class="metrics" aria-live="polite"></p>
+      </section>
+    </main>
+
+    <script type="module" src="./dist/main.js"></script>
+  </body>
+</html>
