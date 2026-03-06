@@ -95,11 +95,6 @@ export const finishConnectionDrag = (options: FinishConnectionDragOptions): void
   const toNodeId = options.state.fromPortKind === "output" ? matchingDropTarget.nodeId : options.state.fromNodeId;
   const toPort = options.state.fromPortKind === "output" ? matchingDropTarget.portId : options.state.fromPort;
 
-  if (toNodeId === fromNodeId) {
-    options.onStatus("Verbindung auf dieselbe Box ist nicht erlaubt.");
-    return;
-  }
-
   const blockReason = getConnectionCreationBlockReason(options.graphConnections, {
     fromNodeId,
     fromPort,

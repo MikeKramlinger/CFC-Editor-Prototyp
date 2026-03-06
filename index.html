@@ -25,10 +25,7 @@
         </div>
         <div id="quiz-menu" class="quiz-menu" hidden>
           <div class="toolbar__row">
-            <label for="quiz-task-select">Aufgabe</label>
-            <select id="quiz-task-select"></select>
             <button id="quiz-check" type="button">Prüfen</button>
-            <button id="quiz-next" type="button">Nächste</button>
             <button id="quiz-end" type="button">Quiz beenden</button>
           </div>
           <div id="quiz-panel" class="quiz-panel">
@@ -69,8 +66,21 @@
       </section>
 
       <section class="data-area">
+        <div
+          id="data-resizer"
+          class="data-resizer"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Datenbereich Höhe anpassen"
+          title="Datenbereich Höhe ziehen"
+        ></div>
         <div class="data-area__header">
           <label for="data-text">Daten</label>
+          <div id="quiz-task-nav-inline" class="quiz-task-nav-inline" hidden>
+            <button id="quiz-prev" type="button" aria-label="Vorherige Aufgabe" title="Vorherige Aufgabe">◀</button>
+            <select id="quiz-task-select" aria-label="Quiz-Aufgabe"></select>
+            <button id="quiz-next" type="button" aria-label="Nächste Aufgabe" title="Nächste Aufgabe">▶</button>
+          </div>
           <div id="quiz-timer-inline" class="quiz-timer-inline" hidden>
             <span><strong id="quiz-task-timer">00:00</strong></span>
             <button id="quiz-timer-toggle" type="button">Pause</button>

@@ -143,4 +143,42 @@ describe("connection lifecycle integration", () => {
     expect(onConnectionCreated).not.toHaveBeenCalled();
     expect(onStatus).toHaveBeenCalledWith("Diese Port-Verbindung existiert bereits.");
   });
+
+  it("allows output to input on the same node", () => {
+    const targetPort = document.createElement("div");
+    targetPort.className = "cfc-port cfc-port--input";
+    targetPort.dataset.nodeId = "N1";
+    targetPort.dataset.portId = "input:0";
+    document.body.append(targetPort);
+    setElementFromPoint(targetPort);
+
+    const created: Array<{ fromNodeId: string; toNodeId: string; fromPort: string; toPort: string }> = [];
+
+    finishConnectionDrag({
+      state: {
+        fromNodeId: "N1",
+        fromPort: "output:0",
+        fromPortKind: "output",
+        startX: 0,
+        startY: 0,
+        currentX: 1,
+        currentY: 1,
+        currentClientX: 10,
+        currentClientY: 10,
+      },
+      graphConnections: [],
+      getNextConnectionId: () => "C3",
+      onConnectionCreated: (connection) => created.push(connection),
+      onConnectionSelected: () => undefined,
+      onStatus: () => undefined,
+    });
+
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({
+      fromNodeId: "N1",
+      fromPort: "output:0",
+      toNodeId: "N1",
+      toPort: "input:0",
+    });
+  });
 });

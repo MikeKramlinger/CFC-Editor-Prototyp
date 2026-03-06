@@ -91,8 +91,7 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
         options.setDataText(adapter.serialize(normalizedGraph));
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      options.setMetrics(`Import fehlgeschlagen: ${message}`);
+      return;
     }
   };
 
@@ -195,8 +194,7 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
       const sizeKb = getPayloadSizeKb(exported);
       options.setMetrics(`Exportgröße: ${formatKb(sizeKb)} | Roundtrip-Zeit: ${formatMs(elapsedMs)}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      options.setMetrics(`Roundtrip fehlgeschlagen: ${message}`);
+      return;
     }
   });
 

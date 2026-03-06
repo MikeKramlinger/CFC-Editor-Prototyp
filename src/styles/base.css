@@ -726,6 +726,35 @@ input[type="number"]:hover {
   position: relative;
 }
 
+.data-resizer {
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(160px, calc(100% - 28px));
+  height: 12px;
+  cursor: row-resize;
+  border-radius: 999px;
+  z-index: 50;
+}
+
+.data-resizer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 4px;
+  border-radius: 999px;
+  background: #c3cad6;
+  border: 1px solid #b9bfca;
+}
+
+.layout.data-expanded .data-resizer {
+  display: none;
+}
+
 .data-area__header {
   display: flex;
   align-items: center;
@@ -733,11 +762,35 @@ input[type="number"]:hover {
   gap: 8px;
 }
 
+.quiz-task-nav-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.quiz-task-nav-inline[hidden] {
+  display: none;
+}
+
+.quiz-task-nav-inline button {
+  min-width: 26px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.quiz-task-nav-inline select {
+  min-width: 130px;
+  max-width: 240px;
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
 .quiz-timer-inline {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
+  margin-left: 0;
   padding: 3px 8px;
   border: 1px solid #d4d7dd;
   border-radius: 999px;
@@ -785,7 +838,7 @@ input[type="number"]:hover {
   border: 1px solid #b9bfca;
   border-radius: 6px;
   overflow: hidden;
-  height: 220px;
+  height: var(--data-editor-height, 220px);
   min-height: 0;
   position: relative;
 }
@@ -807,7 +860,6 @@ input[type="number"]:hover {
 
 .data-editor.is-readonly textarea {
   cursor: not-allowed;
-  background: #f2f4f8;
 }
 
 .layout.data-expanded .data-editor {
@@ -867,6 +919,17 @@ textarea {
   justify-content: center;
   font-size: 16px;
   font-weight: 700;
+}
+
+#quiz-check:disabled,
+.quiz-check-floating:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+#quiz-check:disabled {
+  text-decoration: line-through;
 }
 
 .quiz-check-floating[hidden] {

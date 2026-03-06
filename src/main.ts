@@ -5,6 +5,7 @@ import { createQuizPersistence } from "./quiz/persistence.js";
 import { SAMPLE_QUIZ_TASKS } from "./quiz/sampleQuiz.js";
 import { createQuizSession } from "./quiz/session.js";
 import { isGraphQuizTask, type QuizTaskSessionState, type QuizTaskViewState } from "./quiz/types.js";
+import { installDataAreaResize } from "./ui/behaviors/dataAreaResize.js";
 import { createDataPanelController } from "./ui/controllers/dataPanelController.js";
 import { installKeyboardShortcutsController } from "./ui/controllers/keyboardShortcutsController.js";
 import { createToolbarController } from "./ui/controllers/toolbarController.js";
@@ -31,9 +32,11 @@ const toolboxUi = getToolboxUiElements();
 const dataPanelUi = getDataPanelUiElements();
 const dataArea = query<HTMLElement>(".data-area");
 const dataEditor = query<HTMLDivElement>(".data-editor");
+const dataResizer = query<HTMLDivElement>("#data-resizer");
 const quizToggleButton = query<HTMLButtonElement>("#quiz-toggle");
 const quizMenu = query<HTMLDivElement>("#quiz-menu");
 const quizTaskSelect = query<HTMLSelectElement>("#quiz-task-select");
+const quizPrevButton = query<HTMLButtonElement>("#quiz-prev");
 const quizCheckButton = query<HTMLButtonElement>("#quiz-check");
 const quizNextButton = query<HTMLButtonElement>("#quiz-next");
 const quizEndButton = query<HTMLButtonElement>("#quiz-end");
@@ -41,6 +44,7 @@ const quizPanel = query<HTMLDivElement>("#quiz-panel");
 const quizDescription = query<HTMLParagraphElement>("#quiz-description");
 const quizFeedback = query<HTMLParagraphElement>("#quiz-feedback");
 const quizCheckFloatingButton = query<HTMLButtonElement>("#quiz-check-floating");
+const quizTaskNavInline = query<HTMLDivElement>("#quiz-task-nav-inline");
 const quizTimerInline = query<HTMLDivElement>("#quiz-timer-inline");
 const quizTaskTimer = query<HTMLElement>("#quiz-task-timer");
 const quizTimerToggleButton = query<HTMLButtonElement>("#quiz-timer-toggle");
@@ -218,12 +222,14 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
     ? viewState.task.placeholder ?? "Antwort hier eingeben..."
     : "";
   const isOpenTask = viewState.task.kind === "open";
-  quizCheckButton.textContent = isOpenTask ? "Speichern" : "Prüfen";
+  quizCheckButton.textContent = isOpenTask ? "Antwort speichern" : "Antwort prüfen";
   quizCheckFloatingButton.setAttribute("title", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
   quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
   quizDescription.textContent = `${viewState.task.title}: ${viewState.task.description}`;
   quizFeedback.textContent = viewState.feedback;
   quizTaskSelect.value = String(viewState.index);
+  quizPrevButton.disabled = viewState.index <= 0;
+  quizNextButton.disabled = viewState.index >= quizSession.getTasks().length - 1;
   updateTimerLabel();
   if (isQuizModeActive && !activeTaskCompleted) {
     startTaskTimer();
@@ -280,6 +286,7 @@ const setQuizModeActive = (active: boolean): void => {
 
   setQuizPanelOpen(active);
   quizCheckFloatingButton.hidden = !active;
+  quizTaskNavInline.hidden = !active;
   quizTimerInline.hidden = !active;
 
   if (!active) {
@@ -369,6 +376,8 @@ const runQuizCheck = (): void => {
   if (result.success) {
     const successMessage = "✅ Aufgabe erfüllt.";
     markCurrentTaskCompleted();
+    quizCheckButton.disabled = true;
+    quizCheckFloatingButton.disabled = true;
     quizFeedback.textContent = successMessage;
     quizSession.saveActiveState(createActiveQuizTaskSessionState());
     queueAttempt(true, successMessage, result.failedChecks, result.passedChecks);
@@ -486,7 +495,6 @@ const createBoxesAndConnections = (boxCount: number, connectionCount: number): v
 
   editor.loadGraph(nextGraph);
   currentGraph = editor.getGraph();
-  dataPanel.setMetrics(`Erstellt: ${boxCount} Boxen | ${connectionCount} Verbindungen`);
 };
 
 let currentTheme: UiTheme = getInitialTheme();
@@ -511,7 +519,7 @@ const toolbar = createToolbarController({
   onZoomReset: () => editor.setZoom(1),
   getZoomPercent: () => editor.getZoom() * 100,
   onBulkCreate: (boxCount, connectionCount) => createBoxesAndConnections(boxCount, connectionCount),
-  onBulkCreateInvalid: () => dataPanel.setMetrics("Erstellt: 0 Boxen | 0 Verbindungen"),
+  onBulkCreateInvalid: () => undefined,
   getCurrentTheme: () => currentTheme,
   onThemeToggle: () => {
     currentTheme = currentTheme === "dark" ? "light" : "dark";
@@ -552,6 +560,16 @@ quizTaskSelect.addEventListener("change", () => {
   );
 });
 
+quizPrevButton.addEventListener("click", () => {
+  if (!quizSession.isActive()) {
+    return;
+  }
+  const previousIndex = Math.max(0, quizSession.getActiveIndex() - 1);
+  applyQuizTaskViewState(
+    quizSession.selectTask(previousIndex, createActiveQuizTaskSessionState(), serializeQuizGraph),
+  );
+});
+
 quizTimerToggleButton.addEventListener("click", () => {
   if (!isQuizModeActive || activeTaskCompleted) {
     return;
@@ -576,7 +594,10 @@ quizNextButton.addEventListener("click", () => {
   if (!quizSession.isActive()) {
     return;
   }
-  applyQuizTaskViewState(quizSession.nextTask(createActiveQuizTaskSessionState(), serializeQuizGraph));
+  const nextIndex = Math.min(quizSession.getTasks().length - 1, quizSession.getActiveIndex() + 1);
+  applyQuizTaskViewState(
+    quizSession.selectTask(nextIndex, createActiveQuizTaskSessionState(), serializeQuizGraph),
+  );
 });
 
 quizEndButton.addEventListener("click", () => {
@@ -590,12 +611,7 @@ quizEndButton.addEventListener("click", () => {
   void quizPersistence.flushSessionExport({
     tasks: quizSession.getTasks(),
     session: snapshot,
-  }).then((flushResult) => {
-    if (!flushResult.ok) {
-      dataPanel.setMetrics(`Quiz-Ergebnisse konnten nicht gespeichert werden: ${flushResult.reason}`);
-    } else {
-      dataPanel.setMetrics(`Quiz-Ergebnisse gespeichert: ${flushResult.fileName} (${flushResult.count} Versuch(e))`);
-    }
+  }).then(() => {
     setQuizModeActive(false);
   });
 });
@@ -724,6 +740,11 @@ toolbarUi.formatSelect.addEventListener("change", () => {
 });
 
 dataPanel.setMetrics("");
+installDataAreaResize({
+  resizer: dataResizer,
+  dataEditor,
+  storageKey: "cfc-editor-data-height",
+});
 updateTimerLabel();
 applyTaskEditability();
 setQuizModeActive(false);

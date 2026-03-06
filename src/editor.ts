@@ -411,6 +411,29 @@ export class CfcEditor {
     this.addNodeByType(DEFAULT_NODE_TYPE);
   }
 
+  private createNodeForType(nodeType: CfcNodeType, nextIndex: number, x: number, y: number): CfcNode {
+    const template = getNodeTemplateByType(nodeType);
+    const node: CfcNode = {
+      id: `N${nextIndex}`,
+      type: nodeType,
+      label: `${template.label} ${nextIndex}`,
+      x,
+      y,
+      width: template.width,
+      height: template.height,
+    };
+    fitNodeWidthToLabel(node);
+    return node;
+  }
+
+  private commitAddedNode(before: CfcGraph, node: CfcNode): void {
+    this.graph.nodes.push(node);
+    this.selectedNodeIds.clear();
+    this.selectedConnectionIds.clear();
+    this.selectedNodeIds.add(node.id);
+    this.finalizeGraphMutation(before, { bumpRoutingCache: true });
+  }
+
   addNodeByType(nodeType: CfcNodeType): void {
     if (this.isInteractionLocked) {
       return;
@@ -420,22 +443,13 @@ export class CfcEditor {
       "N",
       this.graph.nodes.map((node) => node.id),
     );
-    const template = getNodeTemplateByType(nodeType);
-    const node: CfcNode = {
-      id: `N${nextIndex}`,
-      type: nodeType,
-      label: `${template.label} ${nextIndex}`,
-      x: this.snapToGrid(2 + (nextIndex % 6) * 2),
-      y: this.snapToGrid(2 + (nextIndex % 5) * 2),
-      width: template.width,
-      height: template.height,
-    };
-    fitNodeWidthToLabel(node);
-    this.graph.nodes.push(node);
-    this.selectedNodeIds.clear();
-    this.selectedConnectionIds.clear();
-    this.selectedNodeIds.add(node.id);
-    this.finalizeGraphMutation(before, { bumpRoutingCache: true });
+    const node = this.createNodeForType(
+      nodeType,
+      nextIndex,
+      this.snapToGrid(2 + (nextIndex % 6) * 2),
+      this.snapToGrid(2 + (nextIndex % 5) * 2),
+    );
+    this.commitAddedNode(before, node);
   }
 
   addNodeAtCursor(): void {
@@ -457,25 +471,13 @@ export class CfcEditor {
       this.graph.nodes.map((node) => node.id),
     );
     const template = getNodeTemplateByType(nodeType);
-    const width = template.width;
-    const height = template.height;
-    const node: CfcNode = {
-      id: `N${nextIndex}`,
-      type: nodeType,
-      label: `${template.label} ${nextIndex}`,
-      x: this.clampUnitToNonNegative(this.lastCursorUnits.x - width / 2),
-      y: this.clampUnitToNonNegative(this.lastCursorUnits.y - height / 2),
-      width,
-      height,
-    };
-
-    fitNodeWidthToLabel(node);
-
-    this.graph.nodes.push(node);
-    this.selectedNodeIds.clear();
-    this.selectedConnectionIds.clear();
-    this.selectedNodeIds.add(node.id);
-    this.finalizeGraphMutation(before, { bumpRoutingCache: true });
+    const node = this.createNodeForType(
+      nodeType,
+      nextIndex,
+      this.clampUnitToNonNegative(this.lastCursorUnits.x - template.width / 2),
+      this.clampUnitToNonNegative(this.lastCursorUnits.y - template.height / 2),
+    );
+    this.commitAddedNode(before, node);
   }
 
   addNodeFromToolbox(nodeType: CfcNodeType, clientX: number, clientY: number): void {
@@ -490,24 +492,13 @@ export class CfcEditor {
     const template = getNodeTemplateByType(nodeType);
     const centerUnitsX = this.clientToGraphUnitX(clientX);
     const centerUnitsY = this.clientToGraphUnitY(clientY);
-
-    const node: CfcNode = {
-      id: `N${nextIndex}`,
-      type: nodeType,
-      label: `${template.label} ${nextIndex}`,
-      x: this.clampUnitToNonNegative(centerUnitsX - template.width / 2),
-      y: this.clampUnitToNonNegative(centerUnitsY - template.height / 2),
-      width: template.width,
-      height: template.height,
-    };
-
-    fitNodeWidthToLabel(node);
-
-    this.graph.nodes.push(node);
-    this.selectedNodeIds.clear();
-    this.selectedConnectionIds.clear();
-    this.selectedNodeIds.add(node.id);
-    this.finalizeGraphMutation(before, { bumpRoutingCache: true });
+    const node = this.createNodeForType(
+      nodeType,
+      nextIndex,
+      this.clampUnitToNonNegative(centerUnitsX - template.width / 2),
+      this.clampUnitToNonNegative(centerUnitsY - template.height / 2),
+    );
+    this.commitAddedNode(before, node);
   }
 
   clear(): void {
@@ -885,8 +876,9 @@ export class CfcEditor {
   private getInputPortPoint(node: CfcNode, portId: string): { x: number; y: number } {
     const template = getNodeTemplateByType(node.type);
     const portIndex = this.getPortIndex(portId, "input");
+    const inputX = node.type === "return" ? node.x - node.height / 2 : node.x;
     return {
-      x: node.x,
+      x: inputX,
       y: this.getPortCenterY(node, portIndex, template.inputCount),
     };
   }
@@ -989,9 +981,6 @@ export class CfcEditor {
       unitToPx: this.unitToPx.bind(this),
       createAStarConnectionPath: this.createAStarConnectionPath.bind(this),
       canDropConnection: (fromNodeId, fromPort, toNodeId, toPort) => {
-        if (fromNodeId === toNodeId) {
-          return false;
-        }
         return (
           getConnectionCreationBlockReason(this.graph.connections, {
             fromNodeId,
@@ -1097,8 +1086,8 @@ export class CfcEditor {
   ): SVGPathElement {
     const startPort = this.getOutputPortPoint(fromNode, fromPortId);
     const endPort = this.getInputPortPoint(toNode, toPortId);
-    const start = { x: Math.round(startPort.x), y: this.getAStarPortY(fromNode, fromPortId, "output") };
-    const end = { x: Math.round(endPort.x), y: this.getAStarPortY(toNode, toPortId, "input") };
+    const start = { x: Math.ceil(startPort.x), y: this.getAStarPortY(fromNode, fromPortId, "output") };
+    const end = { x: Math.floor(endPort.x), y: this.getAStarPortY(toNode, toPortId, "input") };
     const startRight = { x: start.x + 1, y: start.y };
     const endLeft = { x: end.x - 1, y: end.y };
 
