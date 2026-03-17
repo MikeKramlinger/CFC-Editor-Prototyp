@@ -180,10 +180,19 @@ const buildSearchBounds = (
   };
 };
 
-const orderDirectionsByGoal = (from: GridPoint, to: GridPoint): Array<{ x: number; y: number; dir: number }> => {
+const orderDirectionsByGoal = (
+  from: GridPoint,
+  to: GridPoint,
+  forceVertical: boolean,
+): Array<{ x: number; y: number; dir: number }> => {
   const preferredHorizontal = to.x >= from.x ? 0 : 1;
   const preferredVertical = to.y >= from.y ? 2 : 3;
   const remaining = DIRECTIONS.filter((direction) => direction.dir !== preferredHorizontal && direction.dir !== preferredVertical);
+
+  if (forceVertical && from.y !== to.y) {
+    return [DIRECTIONS[preferredVertical]!, DIRECTIONS[preferredHorizontal]!, ...remaining];
+  }
+
   return [DIRECTIONS[preferredHorizontal]!, DIRECTIONS[preferredVertical]!, ...remaining];
 };
 
@@ -202,6 +211,8 @@ const runAStarWithBounds = (params: {
     point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY;
 
   const heuristic = (point: GridPoint): number => Math.abs(point.x - end.x) + Math.abs(point.y - end.y);
+  const totalDeltaX = Math.abs(end.x - startExit.x);
+  const midpointDeltaX = Math.ceil(totalDeltaX / 2);
 
   const startDirection = 0;
   const startState: RouteState = { x: startExit.x, y: startExit.y, dir: startDirection };
@@ -230,7 +241,9 @@ const runAStarWithBounds = (params: {
       break;
     }
 
-    const orderedDirections = orderDirectionsByGoal({ x: current.state.x, y: current.state.y }, end);
+    const traversedDeltaX = Math.abs(current.state.x - startExit.x);
+    const forceVertical = midpointDeltaX > 0 && traversedDeltaX >= midpointDeltaX;
+    const orderedDirections = orderDirectionsByGoal({ x: current.state.x, y: current.state.y }, end, forceVertical);
     for (const direction of orderedDirections) {
       if (isImmediateReverse(current.state.dir, direction.dir)) {
         continue;
@@ -247,7 +260,11 @@ const runAStarWithBounds = (params: {
       }
 
       const bendCost = current.state.dir === direction.dir ? 0 : bendPenalty;
-      const tentativeG = current.g + 1 + bendCost;
+      const horizontalCost =
+        forceVertical && current.state.y !== end.y && (direction.dir === 0 || direction.dir === 1)
+          ? Math.max(1, Math.floor(bendPenalty / 2))
+          : 0;
+      const tentativeG = current.g + 1 + bendCost + horizontalCost;
       const nextState: RouteState = { x: nextPoint.x, y: nextPoint.y, dir: direction.dir };
       const nextStateKey = stateKey(nextState);
 

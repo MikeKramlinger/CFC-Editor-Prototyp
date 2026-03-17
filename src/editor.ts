@@ -1094,6 +1094,18 @@ export class CfcEditor {
     toPortId = "input:0",
     connectionId = "",
   ): SVGPathElement {
+    const toRoutingObstacleNode = (node: CfcNode): CfcNode & { x: number; y: number; width: number; height: number } => {
+      if (node.type !== "return") {
+        return node;
+      }
+
+      return {
+        ...node,
+        x: node.x - 1,
+        width: node.width + 2,
+      };
+    };
+
     const startPort = this.getOutputPortPoint(fromNode, fromPortId);
     const endPort = this.getInputPortPoint(toNode, toPortId);
     const start = { x: Math.ceil(startPort.x), y: this.getAStarPortY(fromNode, fromPortId, "output") };
@@ -1103,15 +1115,16 @@ export class CfcEditor {
 
     const cacheKey = connectionId || `${fromNode.id}|${fromPortId}|${toNode.id}|${toPortId}`;
     const cached = this.astarRouteCache.get(cacheKey);
+    const routingObstacles = this.graph.nodes.map(toRoutingObstacleNode);
     let routePoints: GridPoint[] | null;
 
     if (cached && cached.version === this.routingCacheVersion) {
       routePoints = cached.route;
     } else {
-      const startSegmentTouchesNode = this.graph.nodes.some(
+      const startSegmentTouchesNode = routingObstacles.some(
         (node) => node.id !== fromNode.id && doesHorizontalSegmentTouchObstacle(node, start.x, startRight.x, start.y),
       );
-      const endSegmentTouchesNode = this.graph.nodes.some(
+      const endSegmentTouchesNode = routingObstacles.some(
         (node) => node.id !== toNode.id && doesHorizontalSegmentTouchObstacle(node, endLeft.x, end.x, end.y),
       );
 
@@ -1119,7 +1132,7 @@ export class CfcEditor {
         routePoints = null;
       } else {
         const route = computeOrthogonalRoute({
-          nodes: this.graph.nodes,
+          nodes: routingObstacles,
           start: startRight,
           startExit: startRight,
           end: endLeft,

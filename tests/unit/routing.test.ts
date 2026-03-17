@@ -55,6 +55,28 @@ describe("routing utilities", () => {
     expect(route?.some((point) => point.y !== 0)).toBe(true);
   });
 
+  it("prefers vertical bend around half of horizontal distance", () => {
+    const start = { x: 0, y: 0 };
+    const startExit = { x: 1, y: 0 };
+    const end = { x: 8, y: 3 };
+    const route = computeOrthogonalRoute({
+      nodes: [],
+      start,
+      startExit,
+      end,
+      allowPoints: [start, startExit, end],
+      searchMargin: 8,
+      bendPenalty: 25,
+    });
+
+    expect(route).not.toBeNull();
+    const firstVerticalPoint = route?.find((point) => point.y !== startExit.y);
+    expect(firstVerticalPoint).toBeDefined();
+
+    const halfDeltaX = Math.ceil(Math.abs(end.x - startExit.x) / 2);
+    expect(firstVerticalPoint!.x).toBeLessThanOrEqual(startExit.x + halfDeltaX);
+  });
+
   it("returns null when destination cannot be reached within bounded search", () => {
     const route = computeOrthogonalRoute({
       nodes: [{ x: -10, y: -10, width: 40, height: 40 }],
