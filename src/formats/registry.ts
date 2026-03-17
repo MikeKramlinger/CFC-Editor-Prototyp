@@ -1,9 +1,10 @@
 import type { CfcFormatAdapter } from "./types.js";
 import { jsonFormat } from "./json.js";
+import { ogPlcopenXmlFormat } from "./ogPlcopenXml.js";
 import { plcopenXmlFormat } from "./plcopenXml.js";
 import { yamlFormat } from "./yaml.js";
 
-const adapters: CfcFormatAdapter[] = [plcopenXmlFormat, jsonFormat, yamlFormat];
+const adapters: CfcFormatAdapter[] = [plcopenXmlFormat, ogPlcopenXmlFormat, jsonFormat, yamlFormat];
 
 export const listAdapters = (): CfcFormatAdapter[] => [...adapters];
 

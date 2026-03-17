@@ -117,4 +117,98 @@ connections:
   it("throws on unknown adapter lookup", () => {
     expect(() => getAdapterById("does-not-exist")).toThrow("Unbekanntes Datenformat");
   });
+
+  it("registers OGPLCopenXML format", () => {
+    const adapter = getAdapterById("og-plcopen-xml");
+    expect(adapter.label).toBe("OGPLCopenXML");
+    expect(adapter.fileExtension).toBe("xml");
+  });
+
+  it("deserializes OGPLCopenXML sample structures", () => {
+    const raw = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <pous>
+      <pou name="CFC" pouType="program">
+        <body>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <inVariable localId="1">
+                  <position x="12" y="11" />
+                  <expression>InputA</expression>
+                </inVariable>
+                <block localId="2" executionOrderId="1" typeName="MainBox">
+                  <position x="37" y="11" />
+                  <inputVariables>
+                    <variable formalParameter="In1">
+                      <connectionPointIn>
+                        <connection refLocalId="1" />
+                      </connectionPointIn>
+                    </variable>
+                    <variable formalParameter="In2">
+                      <connectionPointIn>
+                        <connection refLocalId="1" />
+                      </connectionPointIn>
+                    </variable>
+                  </inputVariables>
+                  <outputVariables>
+                    <variable formalParameter="Out1">
+                      <connectionPointOut>
+                        <expression />
+                      </connectionPointOut>
+                    </variable>
+                  </outputVariables>
+                </block>
+                <vendorElement localId="8" executionOrderId="2">
+                  <position x="37" y="26" />
+                  <alternativeText>
+                    <xhtml xmlns="http://www.w3.org/1999/xhtml">ComposerX</xhtml>
+                  </alternativeText>
+                  <inputVariables>
+                    <variable formalParameter="In1">
+                      <connectionPointIn>
+                        <connection refLocalId="2" formalParameter="Out1" />
+                      </connectionPointIn>
+                    </variable>
+                  </inputVariables>
+                  <outputVariables>
+                    <variable formalParameter="Out1">
+                      <connectionPointOut>
+                        <expression />
+                      </connectionPointOut>
+                    </variable>
+                  </outputVariables>
+                  <addData>
+                    <data name="http://www.3s-software.com/plcopenxml/cfcelementtype" handleUnknown="implementation">
+                      <ElementType xmlns="">composer</ElementType>
+                    </data>
+                  </addData>
+                </vendorElement>
+                <outVariable localId="4" executionOrderId="3">
+                  <position x="86" y="13" />
+                  <connectionPointIn>
+                    <connection refLocalId="8" formalParameter="Out1" />
+                  </connectionPointIn>
+                  <expression>OutputA</expression>
+                </outVariable>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+</project>`;
+
+    const adapter = getAdapterById("og-plcopen-xml");
+    const graph = adapter.deserialize(raw);
+
+    expect(graph.nodes).toHaveLength(4);
+    expect(graph.nodes.some((node) => node.type === "input" && node.label === "InputA")).toBe(true);
+    expect(graph.nodes.some((node) => node.type === "box" && node.label === "MainBox")).toBe(true);
+    expect(graph.nodes.some((node) => node.type === "composer" && node.label === "ComposerX")).toBe(true);
+    expect(graph.nodes.some((node) => node.type === "output" && node.label === "OutputA")).toBe(true);
+    expect(graph.connections.length).toBeGreaterThanOrEqual(3);
+  });
 });
