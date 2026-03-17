@@ -12,7 +12,10 @@ export interface ToolbarUiElements {
   importButton: HTMLButtonElement;
   roundtripButton: HTMLButtonElement;
   bulkBoxCountInput: HTMLInputElement;
+  bulkConnectionModeGroup: HTMLFieldSetElement;
   bulkConnectionCountInput: HTMLInputElement;
+  bulkTypeDetails: HTMLDetailsElement;
+  bulkTypeCounts: HTMLDivElement;
   bulkCreateButton: HTMLButtonElement;
   formatSelect: HTMLSelectElement;
 }
@@ -29,7 +32,10 @@ export const getToolbarUiElements = (): ToolbarUiElements => ({
   importButton: query<HTMLButtonElement>("#import-data"),
   roundtripButton: query<HTMLButtonElement>("#roundtrip"),
   bulkBoxCountInput: query<HTMLInputElement>("#bulk-box-count"),
+  bulkConnectionModeGroup: query<HTMLFieldSetElement>("#bulk-connection-mode-group"),
   bulkConnectionCountInput: query<HTMLInputElement>("#bulk-connection-count"),
+  bulkTypeDetails: query<HTMLDetailsElement>("#bulk-type-details"),
+  bulkTypeCounts: query<HTMLDivElement>("#bulk-type-counts"),
   bulkCreateButton: query<HTMLButtonElement>("#bulk-create"),
   formatSelect: query<HTMLSelectElement>("#format-select"),
 });

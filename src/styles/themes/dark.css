@@ -74,6 +74,44 @@ body[data-theme="dark"] .bulk-menu label {
   color: #aeb8cc;
 }
 
+body[data-theme="dark"] .bulk-type-details {
+  border-color: #4b5568;
+}
+
+body[data-theme="dark"] .bulk-connection-mode {
+  border-color: #4b5568;
+}
+
+body[data-theme="dark"] .bulk-connection-mode legend {
+  color: #d1d7e5;
+}
+
+body[data-theme="dark"] .bulk-connection-mode__option {
+  border-color: #4b5568;
+  background: #252b36;
+}
+
+body[data-theme="dark"] .bulk-connection-mode__title {
+  color: #e8ebf2;
+}
+
+body[data-theme="dark"] .bulk-connection-mode__desc {
+  color: #aeb8cc;
+}
+
+body[data-theme="dark"] .bulk-connection-mode__option:has(input[type="radio"]:checked) {
+  border-color: #7ea1ff;
+  background: #2f3f61;
+}
+
+body[data-theme="dark"] .bulk-type-details summary {
+  color: #d1d7e5;
+}
+
+body[data-theme="dark"] .bulk-type-details__hint {
+  color: #aeb8cc;
+}
+
 body[data-theme="dark"] button,
 body[data-theme="dark"] select,
 body[data-theme="dark"] input[type="number"] {

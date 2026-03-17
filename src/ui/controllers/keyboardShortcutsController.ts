@@ -115,7 +115,8 @@ export const installKeyboardShortcutsController = (options: KeyboardShortcutsCon
       return;
     }
 
-    if (event.key === "0") {
+    const isZoomResetShortcut = event.key === "0" || event.code === "Digit0" || event.code === "Numpad0";
+    if (isZoomResetShortcut) {
       event.preventDefault();
       options.onZoomReset();
     }

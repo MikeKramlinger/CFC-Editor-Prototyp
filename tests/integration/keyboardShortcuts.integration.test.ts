@@ -113,4 +113,14 @@ describe("keyboard shortcuts integration", () => {
     expect(callbacks.onCopy).not.toHaveBeenCalled();
     dispose();
   });
+
+  it("resets zoom for Numpad0 shortcut", () => {
+    const { options, callbacks } = createKeyboardOptions();
+    const dispose = installKeyboardShortcutsController(options);
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "0", code: "Numpad0", bubbles: true }));
+
+    expect(callbacks.onZoomReset).toHaveBeenCalledTimes(1);
+    dispose();
+  });
 });

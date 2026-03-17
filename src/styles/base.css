@@ -136,6 +136,96 @@ body {
   color: #5f6673;
 }
 
+.bulk-connection-mode {
+  grid-column: 1 / -1;
+  border: 1px solid #d4d7dd;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.bulk-connection-mode legend {
+  font-size: 12px;
+  color: #4b5362;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.bulk-connection-mode__option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  border: 1px solid #d4d7dd;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.bulk-connection-mode__option input[type="radio"] {
+  grid-row: 1 / span 2;
+  margin: 0;
+}
+
+.bulk-connection-mode__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2f3644;
+}
+
+.bulk-connection-mode__desc {
+  font-size: 11px;
+  color: #6a7383;
+}
+
+.bulk-connection-mode__option:has(input[type="radio"]:checked) {
+  border-color: #2358d4;
+  background: #eaf0ff;
+}
+
+.bulk-menu__advanced {
+  grid-column: 1 / -1;
+}
+
+.bulk-type-details {
+  border: 1px solid #d4d7dd;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.bulk-type-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #4b5362;
+  font-weight: 600;
+}
+
+.bulk-type-details__hint {
+  margin: 8px 0;
+  font-size: 11px;
+  color: #6a7383;
+}
+
+.bulk-type-counts {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 72px;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.bulk-type-counts label {
+  margin: 0;
+  font-size: 12px;
+}
+
+.bulk-type-counts input[type="number"] {
+  width: 100%;
+  padding: 4px 8px;
+}
+
 .bulk-menu__actions {
   grid-column: 1 / -1;
   display: flex;
@@ -193,7 +283,6 @@ input[type="number"]:hover {
   display: grid;
   grid-template-columns: 240px 1fr;
   height: 100%;
-  transition: grid-template-columns 220ms ease;
 }
 
 .workspace.toolbox-collapsed {
@@ -205,7 +294,6 @@ input[type="number"]:hover {
   padding: 10px;
   overflow: auto;
   background: #fbfcfe;
-  transition: padding 220ms ease, opacity 220ms ease;
 }
 
 .toolbox__header {

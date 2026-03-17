@@ -1,8 +1,15 @@
 import type { CfcFormatAdapter } from "../../formats/types.js";
-import { getNodeTemplateByType, type CfcGraph } from "../../model.js";
+import { getNodeTemplateByType, isCfcNodeType, type CfcGraph, type CfcNodeType } from "../../model.js";
 
 type UiTheme = "light" | "dark";
 type RoutingMode = "astar" | "bezier";
+
+interface BulkTypeOption {
+  type: CfcNodeType;
+  label: string;
+}
+
+type BulkConnectionMode = "count" | "single-target" | "all-to-all";
 
 interface ToolbarControllerOptions {
   exportButton: HTMLButtonElement;
@@ -16,14 +23,23 @@ interface ToolbarControllerOptions {
   zoomInButton: HTMLButtonElement;
   zoomValue: HTMLSpanElement;
   bulkBoxCountInput: HTMLInputElement;
+  bulkConnectionModeGroup: HTMLFieldSetElement;
   bulkConnectionCountInput: HTMLInputElement;
+  bulkTypeDetails: HTMLDetailsElement;
+  bulkTypeCounts: HTMLDivElement;
   bulkCreateButton: HTMLButtonElement;
+  bulkTypeOptions: BulkTypeOption[];
   onRoutingToggle: () => RoutingMode;
   getRoutingMode: () => RoutingMode;
   onZoomDelta: (delta: number) => void;
   onZoomReset: () => void;
   getZoomPercent: () => number;
-  onBulkCreate: (boxCount: number, connectionCount: number) => void;
+  onBulkCreate: (
+    boxCount: number,
+    connectionCount: number,
+    typeCounts: Partial<Record<CfcNodeType, number>>,
+    connectionMode: BulkConnectionMode,
+  ) => void;
   onBulkCreateInvalid: () => void;
   getCurrentTheme: () => UiTheme;
   onThemeToggle: () => UiTheme;
@@ -68,8 +84,71 @@ const hasNodeBelowMinimumSize = (graph: CfcGraph): boolean =>
     return node.width < template.width || node.height < template.height;
   });
 
+const buildBulkTypeCountInputs = (
+  container: HTMLDivElement,
+  options: BulkTypeOption[],
+): void => {
+  const fragment = document.createDocumentFragment();
+  options.forEach((option) => {
+    const id = `bulk-type-${option.type.replace(/[^a-z0-9]+/gi, "-")}`;
+    const label = document.createElement("label");
+    label.setAttribute("for", id);
+    label.textContent = option.label;
+
+    const input = document.createElement("input");
+    input.id = id;
+    input.type = "number";
+    input.min = "0";
+    input.step = "1";
+    input.value = "0";
+    input.dataset.nodeType = option.type;
+
+    fragment.append(label, input);
+  });
+  container.replaceChildren(fragment);
+};
+
+const readBulkTypeCounts = (container: HTMLDivElement): Partial<Record<CfcNodeType, number>> => {
+  const counts: Partial<Record<CfcNodeType, number>> = {};
+  const inputs = container.querySelectorAll<HTMLInputElement>("input[data-node-type]");
+  inputs.forEach((input) => {
+    const nodeType = input.dataset.nodeType;
+    if (!nodeType || !isCfcNodeType(nodeType)) {
+      return;
+    }
+    const count = parseNonNegativeInt(input.value, 0);
+    if (count > 0) {
+      counts[nodeType] = count;
+    }
+  });
+  return counts;
+};
+
+const isBulkConnectionMode = (value: string): value is BulkConnectionMode =>
+  value === "count" || value === "single-target" || value === "all-to-all";
+
+const getSelectedBulkConnectionMode = (container: HTMLFieldSetElement): BulkConnectionMode => {
+  const checked = container.querySelector<HTMLInputElement>('input[name="bulk-connection-mode"]:checked');
+  const value = checked?.value ?? "count";
+  return isBulkConnectionMode(value) ? value : "count";
+};
+
 export const createToolbarController = (options: ToolbarControllerOptions): ToolbarController => {
   let isBulkMenuOpen = false;
+  const bulkConnectionCountLabel = options.bulkMenu.querySelector<HTMLLabelElement>('label[for="bulk-connection-count"]');
+
+  buildBulkTypeCountInputs(options.bulkTypeCounts, options.bulkTypeOptions);
+
+  const updateConnectionCountAvailability = (): void => {
+    const mode = getSelectedBulkConnectionMode(options.bulkConnectionModeGroup);
+    const isManualCount = mode === "count";
+    if (bulkConnectionCountLabel) {
+      bulkConnectionCountLabel.hidden = !isManualCount;
+    }
+    options.bulkConnectionCountInput.hidden = !isManualCount;
+    options.bulkConnectionCountInput.disabled = !isManualCount;
+    options.bulkConnectionCountInput.setAttribute("aria-disabled", isManualCount ? "false" : "true");
+  };
 
   const triggerExport = (): void => {
     const adapter = options.getCurrentAdapter();
@@ -125,13 +204,21 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
   options.bulkCreateButton.addEventListener("click", () => {
     const boxCount = parseNonNegativeInt(options.bulkBoxCountInput.value, 0);
     const connectionCount = parseNonNegativeInt(options.bulkConnectionCountInput.value, 0);
+    const typeCounts = options.bulkTypeDetails.open
+      ? readBulkTypeCounts(options.bulkTypeCounts)
+      : {};
+    const connectionMode = getSelectedBulkConnectionMode(options.bulkConnectionModeGroup);
     if (boxCount <= 0) {
       options.onBulkCreateInvalid();
       return;
     }
-    options.onBulkCreate(boxCount, connectionCount);
+    options.onBulkCreate(boxCount, connectionCount, typeCounts, connectionMode);
     isBulkMenuOpen = false;
     updateBulkMenuVisibility();
+  });
+
+  options.bulkConnectionModeGroup.addEventListener("change", () => {
+    updateConnectionCountAvailability();
   });
 
   document.addEventListener("click", (event) => {
@@ -201,6 +288,7 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
   applyTheme(options.getCurrentTheme());
   updateRoutingLabel();
   updateZoomLabel();
+  updateConnectionCountAvailability();
   updateBulkMenuVisibility();
 
   return {

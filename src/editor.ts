@@ -383,6 +383,16 @@ export class CfcEditor {
     return this.zoom;
   }
 
+  resetViewportToOrigin(): number {
+    this.zoom = 1;
+    this.panX = 0;
+    this.panY = 0;
+    this.applyZoom();
+    this.renderConnections();
+    this.options.onStatus("Zoom: 100%");
+    return this.zoom;
+  }
+
   adjustZoom(delta: number): number {
     return this.setZoom(this.zoom + delta);
   }

@@ -12,8 +12,60 @@ export interface DataPanelController {
   getDataText: () => string;
 }
 
+const isWordLikeChar = (char: string): boolean => /[A-Za-z0-9_]/.test(char);
+
+const isWhitespace = (char: string): boolean => /\s/.test(char);
+
+const findPreviousSelectionBoundary = (text: string, index: number): number => {
+  let cursor = Math.max(0, index);
+
+  while (cursor > 0 && isWhitespace(text[cursor - 1] ?? "")) {
+    cursor -= 1;
+  }
+
+  if (cursor > 0 && isWordLikeChar(text[cursor - 1] ?? "")) {
+    while (cursor > 0 && isWordLikeChar(text[cursor - 1] ?? "")) {
+      cursor -= 1;
+    }
+    return cursor;
+  }
+
+  while (
+    cursor > 0 &&
+    !isWhitespace(text[cursor - 1] ?? "") &&
+    !isWordLikeChar(text[cursor - 1] ?? "")
+  ) {
+    cursor -= 1;
+  }
+
+  return cursor;
+};
+
+const findNextSelectionBoundary = (text: string, index: number): number => {
+  const length = text.length;
+  let cursor = Math.min(length, index);
+
+  while (cursor < length && isWhitespace(text[cursor] ?? "")) {
+    cursor += 1;
+  }
+
+  if (cursor < length && isWordLikeChar(text[cursor] ?? "")) {
+    while (cursor < length && isWordLikeChar(text[cursor] ?? "")) {
+      cursor += 1;
+    }
+    return cursor;
+  }
+
+  while (cursor < length && !isWhitespace(text[cursor] ?? "") && !isWordLikeChar(text[cursor] ?? "")) {
+    cursor += 1;
+  }
+
+  return cursor;
+};
+
 export const createDataPanelController = (options: DataPanelControllerOptions): DataPanelController => {
   let isExpanded = false;
+  let wordSelectionAnchor: number | null = null;
 
   const updateVisibility = (): void => {
     options.layout.classList.toggle("data-expanded", isExpanded);
@@ -45,6 +97,41 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
   });
 
   options.dataText.addEventListener("keydown", (event) => {
+    const isWordSelectionShortcut =
+      (event.ctrlKey || event.metaKey) &&
+      event.shiftKey &&
+      (event.key === "ArrowLeft" || event.key === "ArrowRight");
+
+    if (isWordSelectionShortcut) {
+      event.preventDefault();
+      options.dataText.focus();
+
+      const currentStart = options.dataText.selectionStart;
+      const currentEnd = options.dataText.selectionEnd;
+
+      if (wordSelectionAnchor === null) {
+        if (currentStart === currentEnd) {
+          wordSelectionAnchor = currentStart;
+        } else {
+          wordSelectionAnchor = options.dataText.selectionDirection === "backward" ? currentEnd : currentStart;
+        }
+      }
+
+      const anchor = wordSelectionAnchor;
+      const focus = anchor <= currentStart ? currentEnd : currentStart;
+      const nextFocus = event.key === "ArrowLeft"
+        ? findPreviousSelectionBoundary(options.dataText.value, focus)
+        : findNextSelectionBoundary(options.dataText.value, focus);
+      const nextStart = Math.min(anchor, nextFocus);
+      const nextEnd = Math.max(anchor, nextFocus);
+      const nextDirection: "forward" | "backward" = nextFocus < anchor ? "backward" : "forward";
+
+      options.dataText.setSelectionRange(nextStart, nextEnd, nextDirection);
+      return;
+    }
+
+    wordSelectionAnchor = null;
+
     if (event.key !== "Tab") {
       return;
     }
@@ -63,6 +150,14 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
     }
 
     updateLineNumbers();
+  });
+
+  options.dataText.addEventListener("pointerdown", () => {
+    wordSelectionAnchor = null;
+  });
+
+  options.dataText.addEventListener("blur", () => {
+    wordSelectionAnchor = null;
   });
 
   updateVisibility();

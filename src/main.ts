@@ -53,6 +53,7 @@ const quizTaskLocked = query<HTMLElement>("#quiz-task-locked");
 const THEME_STORAGE_KEY = "cfc-editor-theme";
 type UiTheme = "light" | "dark";
 type ShortcutContext = "graph" | "data";
+type BulkConnectionMode = "count" | "single-target" | "all-to-all";
 
 let currentGraph: CfcGraph = createEmptyGraph();
 const initialSelectedToolboxType: CfcNodeType = "box";
@@ -63,6 +64,7 @@ let graphBeforeQuiz: CfcGraph | null = null;
 let dataTextBeforeQuiz = "";
 let activeTaskElapsedMs = 0;
 let activeTaskCompleted = false;
+let quizTimerPaused = false;
 let taskTimerRunning = false;
 let taskTimerStartedAtMs: number | null = null;
 let timerIntervalId: number | null = null;
@@ -102,20 +104,25 @@ const syncElapsedFromRunning = (): void => {
   taskTimerStartedAtMs = Date.now();
 };
 
-const pauseTaskTimer = (): void => {
-  if (!taskTimerRunning || taskTimerStartedAtMs === null) {
-    return;
+const pauseTaskTimer = (markQuizTimerPaused = false): void => {
+  if (taskTimerRunning && taskTimerStartedAtMs !== null) {
+    activeTaskElapsedMs += Date.now() - taskTimerStartedAtMs;
   }
-  activeTaskElapsedMs += Date.now() - taskTimerStartedAtMs;
+  if (markQuizTimerPaused) {
+    quizTimerPaused = true;
+  }
   taskTimerStartedAtMs = null;
   taskTimerRunning = false;
   stopTimerInterval();
   updateTimerLabel();
 };
 
-const startTaskTimer = (): void => {
-  if (activeTaskCompleted || taskTimerRunning) {
+const startTaskTimer = (resumeQuizTimer = false): void => {
+  if (activeTaskCompleted || taskTimerRunning || (quizTimerPaused && !resumeQuizTimer)) {
     return;
+  }
+  if (resumeQuizTimer) {
+    quizTimerPaused = false;
   }
   taskTimerStartedAtMs = Date.now();
   taskTimerRunning = true;
@@ -130,6 +137,7 @@ const stopAndResetTaskTimer = (): void => {
   pauseTaskTimer();
   activeTaskElapsedMs = 0;
   activeTaskCompleted = false;
+  quizTimerPaused = false;
   updateTimerLabel();
 };
 
@@ -145,7 +153,7 @@ const applyTaskEditability = (): void => {
   quizCheckFloatingButton.disabled = locked;
   quizTimerToggleButton.hidden = locked;
   quizTimerToggleButton.disabled = !isQuizModeActive || activeTaskCompleted;
-  quizTimerToggleButton.textContent = taskTimerRunning ? "Pause" : "Fortsetzen";
+  quizTimerToggleButton.textContent = quizTimerPaused ? "Fortsetzen" : "Pause";
 };
 
 const markCurrentTaskCompleted = (): void => {
@@ -231,7 +239,7 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   quizPrevButton.disabled = viewState.index <= 0;
   quizNextButton.disabled = viewState.index >= quizSession.getTasks().length - 1;
   updateTimerLabel();
-  if (isQuizModeActive && !activeTaskCompleted) {
+  if (isQuizModeActive && !activeTaskCompleted && !quizTimerPaused) {
     startTaskTimer();
   }
   applyTaskEditability();
@@ -432,17 +440,39 @@ const resolveDraggedNodeType = (event: DragEvent): CfcNodeType | null => {
   return toolbox.getDraggedType();
 };
 
-const createBoxesAndConnections = (boxCount: number, connectionCount: number): void => {
+const createBoxesAndConnections = (
+  boxCount: number,
+  connectionCount: number,
+  typeCounts: Partial<Record<CfcNodeType, number>>,
+  connectionMode: BulkConnectionMode,
+): void => {
   const nextGraph = editor.getGraph();
-  const template = getNodeTemplateByType("box");
   const baseY =
     nextGraph.nodes.length === 0
       ? 2
       : Math.max(...nextGraph.nodes.map((node) => node.y + node.height)) + 3;
   const columnCount = Math.max(1, Math.ceil(Math.sqrt(boxCount)));
+  const maxTemplateWidth = Math.max(...CFC_NODE_TEMPLATES.map((template) => template.width));
+  const maxTemplateHeight = Math.max(...CFC_NODE_TEMPLATES.map((template) => template.height));
   const newNodeIds: string[] = [];
+  const newNodes: CfcNode[] = [];
+  const orderedRequestedTypes: CfcNodeType[] = [];
 
-  for (let index = 0; index < boxCount; index += 1) {
+  for (const template of CFC_NODE_TEMPLATES) {
+    const requestedCount = Math.max(0, typeCounts[template.type] ?? 0);
+    for (let index = 0; index < requestedCount; index += 1) {
+      orderedRequestedTypes.push(template.type);
+    }
+  }
+
+  const plannedNodeTypes: CfcNodeType[] = orderedRequestedTypes.slice(0, boxCount);
+  while (plannedNodeTypes.length < boxCount) {
+    plannedNodeTypes.push("box");
+  }
+
+  for (let index = 0; index < plannedNodeTypes.length; index += 1) {
+    const nodeType = plannedNodeTypes[index] ?? "box";
+    const template = getNodeTemplateByType(nodeType);
     const serial = getNextSerialForPrefix(
       "N",
       nextGraph.nodes.map((node) => node.id),
@@ -451,45 +481,101 @@ const createBoxesAndConnections = (boxCount: number, connectionCount: number): v
     const col = index % columnCount;
     const node: CfcNode = {
       id: `N${serial}`,
-      type: "box",
-      label: `Box ${serial}`,
-      x: 2 + col * (template.width + 3),
-      y: baseY + row * (template.height + 3),
+      type: nodeType,
+      label: `${template.label} ${serial}`,
+      x: 2 + col * (maxTemplateWidth + 3),
+      y: baseY + row * (maxTemplateHeight + 3),
       width: template.width,
       height: template.height,
     };
     nextGraph.nodes.push(node);
+    newNodes.push(node);
     newNodeIds.push(node.id);
   }
 
-  if (newNodeIds.length >= 2 && connectionCount > 0) {
-    const connectionTargets: Array<{ fromNodeId: string; toNodeId: string; toPort: string }> = [];
-    for (const fromNodeId of newNodeIds) {
-      for (const toNodeId of newNodeIds) {
-        if (fromNodeId === toNodeId) {
-          continue;
-        }
-        connectionTargets.push({ fromNodeId, toNodeId, toPort: "input:0" });
-        connectionTargets.push({ fromNodeId, toNodeId, toPort: "input:1" });
-      }
-    }
+  if (newNodes.length >= 2) {
+    const outputPorts = newNodes.flatMap((node) => {
+      const template = getNodeTemplateByType(node.type);
+      return Array.from({ length: template.outputCount }, (_value, index) => ({
+        nodeId: node.id,
+        port: `output:${index}`,
+      }));
+    });
+    const inputPorts = newNodes.flatMap((node) => {
+      const template = getNodeTemplateByType(node.type);
+      return Array.from({ length: template.inputCount }, (_value, index) => ({
+        nodeId: node.id,
+        port: `input:${index}`,
+      }));
+    });
 
-    for (let index = 0; index < connectionCount; index += 1) {
-      const target = connectionTargets[index % connectionTargets.length];
-      if (!target) {
-        continue;
-      }
+    const connect = (fromNodeId: string, fromPort: string, toNodeId: string, toPort: string): void => {
       const connection: CfcConnection = {
         id: `C${getNextSerialForPrefix(
           "C",
-          nextGraph.connections.map((connection) => connection.id),
+          nextGraph.connections.map((existingConnection) => existingConnection.id),
         )}`,
-        fromNodeId: target.fromNodeId,
-        fromPort: "output:0",
-        toNodeId: target.toNodeId,
-        toPort: target.toPort,
+        fromNodeId,
+        fromPort,
+        toNodeId,
+        toPort,
       };
       nextGraph.connections.push(connection);
+    };
+
+    if (connectionMode === "all-to-all") {
+      for (const outputPort of outputPorts) {
+        for (const inputPort of inputPorts) {
+          if (outputPort.nodeId === inputPort.nodeId) {
+            continue;
+          }
+          connect(outputPort.nodeId, outputPort.port, inputPort.nodeId, inputPort.port);
+        }
+      }
+    } else if (connectionMode === "single-target") {
+      let inputIndex = 0;
+      for (const outputPort of outputPorts) {
+        if (inputPorts.length === 0) {
+          break;
+        }
+        let selectedInput: { nodeId: string; port: string } | null = null;
+        for (let attempt = 0; attempt < inputPorts.length; attempt += 1) {
+          const candidate = inputPorts[(inputIndex + attempt) % inputPorts.length];
+          if (!candidate || candidate.nodeId === outputPort.nodeId) {
+            continue;
+          }
+          selectedInput = candidate;
+          inputIndex = (inputIndex + attempt + 1) % inputPorts.length;
+          break;
+        }
+        if (!selectedInput) {
+          continue;
+        }
+        connect(outputPort.nodeId, outputPort.port, selectedInput.nodeId, selectedInput.port);
+      }
+    } else if (connectionCount > 0) {
+      const connectionTargets: Array<{ fromNodeId: string; fromPort: string; toNodeId: string; toPort: string }> = [];
+      for (const outputPort of outputPorts) {
+        for (const inputPort of inputPorts) {
+          if (outputPort.nodeId === inputPort.nodeId) {
+            continue;
+          }
+          connectionTargets.push({
+            fromNodeId: outputPort.nodeId,
+            fromPort: outputPort.port,
+            toNodeId: inputPort.nodeId,
+            toPort: inputPort.port,
+          });
+        }
+      }
+
+      for (let index = 0; index < connectionCount; index += 1) {
+        const target = connectionTargets[index % connectionTargets.length];
+        if (!target) {
+          continue;
+        }
+        connect(target.fromNodeId, target.fromPort, target.toNodeId, target.toPort);
+      }
     }
   }
 
@@ -511,14 +597,24 @@ const toolbar = createToolbarController({
   zoomInButton: toolbarUi.zoomInButton,
   zoomValue: toolbarUi.zoomValue,
   bulkBoxCountInput: toolbarUi.bulkBoxCountInput,
+  bulkConnectionModeGroup: toolbarUi.bulkConnectionModeGroup,
   bulkConnectionCountInput: toolbarUi.bulkConnectionCountInput,
+  bulkTypeDetails: toolbarUi.bulkTypeDetails,
+  bulkTypeCounts: toolbarUi.bulkTypeCounts,
   bulkCreateButton: toolbarUi.bulkCreateButton,
+  bulkTypeOptions: CFC_NODE_TEMPLATES.filter(
+    (template) => template.type !== "input-pin" && template.type !== "output-pin",
+  ).map((template) => ({
+    type: template.type,
+    label: template.label,
+  })),
   onRoutingToggle: () => editor.toggleRoutingMode(),
   getRoutingMode: () => editor.getRoutingMode(),
   onZoomDelta: (delta) => editor.adjustZoom(delta),
-  onZoomReset: () => editor.setZoom(1),
+  onZoomReset: () => editor.resetViewportToOrigin(),
   getZoomPercent: () => editor.getZoom() * 100,
-  onBulkCreate: (boxCount, connectionCount) => createBoxesAndConnections(boxCount, connectionCount),
+  onBulkCreate: (boxCount, connectionCount, typeCounts, connectionMode) =>
+    createBoxesAndConnections(boxCount, connectionCount, typeCounts, connectionMode),
   onBulkCreateInvalid: () => undefined,
   getCurrentTheme: () => currentTheme,
   onThemeToggle: () => {
@@ -575,9 +671,9 @@ quizTimerToggleButton.addEventListener("click", () => {
     return;
   }
   if (taskTimerRunning) {
-    pauseTaskTimer();
+    pauseTaskTimer(true);
   } else {
-    startTaskTimer();
+    startTaskTimer(true);
   }
   applyTaskEditability();
 });
@@ -729,7 +825,7 @@ installKeyboardShortcutsController({
     toolbar.updateZoomLabel();
   },
   onZoomReset: () => {
-    editor.setZoom(1);
+    editor.resetViewportToOrigin();
     toolbar.updateZoomLabel();
   },
   onEscape: () => toolbar.handleEscape(),

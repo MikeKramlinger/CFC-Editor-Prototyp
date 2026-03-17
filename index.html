@@ -36,8 +36,33 @@
         <div id="bulk-menu" class="bulk-menu" hidden>
           <label for="bulk-box-count">Anzahl Boxen</label>
           <input id="bulk-box-count" type="number" min="1" step="1" value="6" />
+          <fieldset id="bulk-connection-mode-group" class="bulk-connection-mode">
+            <legend>Verbindungsmodus</legend>
+            <label class="bulk-connection-mode__option">
+              <input type="radio" name="bulk-connection-mode" value="count" checked />
+              <span class="bulk-connection-mode__title">Manuell (Anzahl)</span>
+              <span class="bulk-connection-mode__desc">Nutzt die Zahl im Feld "Anzahl Verbindungen".</span>
+            </label>
+            <label class="bulk-connection-mode__option">
+              <input type="radio" name="bulk-connection-mode" value="single-target" />
+              <span class="bulk-connection-mode__title">Output -> anderer Input</span>
+              <span class="bulk-connection-mode__desc">Jeder neue Output wird einmal verbunden.</span>
+            </label>
+            <label class="bulk-connection-mode__option">
+              <input type="radio" name="bulk-connection-mode" value="all-to-all" />
+              <span class="bulk-connection-mode__title">Output -> alle Inputs</span>
+              <span class="bulk-connection-mode__desc">Vollvernetzung aller neuen Knoten untereinander.</span>
+            </label>
+          </fieldset>
           <label for="bulk-connection-count">Anzahl Verbindungen</label>
           <input id="bulk-connection-count" type="number" min="0" step="1" value="10" />
+          <div class="bulk-menu__advanced" aria-label="Optionale Verteilung nach Box-Typ">
+            <details id="bulk-type-details" class="bulk-type-details">
+              <summary>Typen gezielt verteilen (optional)</summary>
+              <p class="bulk-type-details__hint">Fehlende Boxen werden als "Box" ergänzt.</p>
+              <div id="bulk-type-counts" class="bulk-type-counts"></div>
+            </details>
+          </div>
           <div class="bulk-menu__actions">
             <button id="bulk-create" type="button">Erstellen</button>
           </div>
