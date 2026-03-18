@@ -16,6 +16,7 @@ export interface ToolbarUiElements {
   bulkConnectionCountInput: HTMLInputElement;
   bulkTypeDetails: HTMLDetailsElement;
   bulkTypeCounts: HTMLDivElement;
+  bulkTypeResetButton: HTMLButtonElement;
   bulkCreateButton: HTMLButtonElement;
   formatSelect: HTMLSelectElement;
 }
@@ -36,6 +37,7 @@ export const getToolbarUiElements = (): ToolbarUiElements => ({
   bulkConnectionCountInput: query<HTMLInputElement>("#bulk-connection-count"),
   bulkTypeDetails: query<HTMLDetailsElement>("#bulk-type-details"),
   bulkTypeCounts: query<HTMLDivElement>("#bulk-type-counts"),
+  bulkTypeResetButton: query<HTMLButtonElement>("#bulk-type-reset"),
   bulkCreateButton: query<HTMLButtonElement>("#bulk-create"),
   formatSelect: query<HTMLSelectElement>("#format-select"),
 });

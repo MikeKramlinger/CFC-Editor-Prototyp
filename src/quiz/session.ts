@@ -19,6 +19,7 @@ const cloneTaskSessionState = (state: QuizTaskSessionState): QuizTaskSessionStat
   feedback: state.feedback,
   elapsedMs: state.elapsedMs,
   isCompleted: state.isCompleted,
+  answerHistory: state.answerHistory?.map((entry) => ({ ...entry })) ?? [],
 });
 
 const createDefaultTaskSessionState = (task: QuizTask, serializeGraph: (graph: CfcGraph) => string): QuizTaskSessionState => {
@@ -31,6 +32,7 @@ const createDefaultTaskSessionState = (task: QuizTask, serializeGraph: (graph: C
       feedback: "Frage geladen. Trage deine Antwort im Datenfeld ein und klicke auf Speichern.",
       elapsedMs: 0,
       isCompleted: false,
+      answerHistory: [],
     };
   }
 

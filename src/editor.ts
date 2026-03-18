@@ -40,6 +40,7 @@ import { type ConnectionDragState } from "./core/editor/connection.js";
 import { type ConnectionPortKind } from "./core/editor/connection.js";
 import {
   appendAndCompactRoute,
+  compactRouteToAnchors,
   computeOrthogonalRoute,
   doesHorizontalSegmentTouchObstacle,
 } from "./core/editor/routing.js";
@@ -1140,7 +1141,7 @@ export class CfcEditor {
           searchMargin: SEARCH_MARGIN,
           bendPenalty: BEND_PENALTY,
         });
-        routePoints = route ? appendAndCompactRoute([start, ...route], [end]) : null;
+        routePoints = route ? compactRouteToAnchors(appendAndCompactRoute([start, ...route], [end])) : null;
       }
       this.astarRouteCache.set(cacheKey, { version: this.routingCacheVersion, route: routePoints });
     }

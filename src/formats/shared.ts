@@ -56,6 +56,8 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
   const type = isCfcNodeType(rawType) ? rawType : DEFAULT_NODE_TYPE;
   const template = getNodeTemplateByType(type);
   const executionOrder = Math.max(1, Math.floor(toFiniteNumber(entry.executionOrder, index + 1)));
+  const width = Math.max(template.width, toFiniteNumber(entry.width, template.width));
+  const height = Math.max(template.height, toFiniteNumber(entry.height, template.height));
 
   return {
     node: {
@@ -64,8 +66,8 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
       label: toStringValue(entry.label, "Block"),
       x: toFiniteNumber(entry.x),
       y: toFiniteNumber(entry.y),
-      width: toFiniteNumber(entry.width, template.width),
-      height: toFiniteNumber(entry.height, template.height),
+      width,
+      height,
     },
     executionOrder,
     sourceIndex: index,
@@ -116,14 +118,17 @@ export const toExecutionOrderedSerializableGraph = (
   return {
     version: graph.version,
     nodes: graph.nodes.map((node) => {
+      const template = getNodeTemplateByType(node.type);
+      const width = Math.max(template.width, toFiniteNumber(node.width, template.width));
+      const height = Math.max(template.height, toFiniteNumber(node.height, template.height));
       const entry: Record<string, unknown> = {
         id: node.id,
         type: node.type,
         label: node.label,
         x: node.x,
         y: node.y,
-        width: node.width,
-        height: node.height,
+        width,
+        height,
       };
       if (isExecutionOrderedNode(node)) {
         const executionOrder = getExecutionOrderByNodeId(graph.nodes, node.id);

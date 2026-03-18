@@ -27,6 +27,7 @@ interface ToolbarControllerOptions {
   bulkConnectionCountInput: HTMLInputElement;
   bulkTypeDetails: HTMLDetailsElement;
   bulkTypeCounts: HTMLDivElement;
+  bulkTypeResetButton?: HTMLButtonElement;
   bulkCreateButton: HTMLButtonElement;
   bulkTypeOptions: BulkTypeOption[];
   onRoutingToggle: () => RoutingMode;
@@ -215,6 +216,13 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
     options.onBulkCreate(boxCount, connectionCount, typeCounts, connectionMode);
     isBulkMenuOpen = false;
     updateBulkMenuVisibility();
+  });
+
+  options.bulkTypeResetButton?.addEventListener("click", () => {
+    const inputs = options.bulkTypeCounts.querySelectorAll<HTMLInputElement>('input[data-node-type]');
+    inputs.forEach((input) => {
+      input.value = "0";
+    });
   });
 
   options.bulkConnectionModeGroup.addEventListener("change", () => {

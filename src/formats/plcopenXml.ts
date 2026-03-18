@@ -69,6 +69,7 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     const nodes = documentRoot.createElementNS(NAMESPACE, "nodes");
     let executionOrder = 1;
     graph.nodes.forEach((node) => {
+      const template = getNodeTemplateByType(node.type);
       const nodeElement = documentRoot.createElementNS(NAMESPACE, "node");
       nodeElement.setAttribute("id", node.id);
       nodeElement.setAttribute("type", node.type);
@@ -79,8 +80,8 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
       }
       nodeElement.setAttribute("x", String(node.x));
       nodeElement.setAttribute("y", String(node.y));
-      nodeElement.setAttribute("width", String(node.width));
-      nodeElement.setAttribute("height", String(node.height));
+      nodeElement.setAttribute("width", String(Math.max(template.width, node.width)));
+      nodeElement.setAttribute("height", String(Math.max(template.height, node.height)));
       nodes.append(nodeElement);
     });
 
@@ -122,6 +123,8 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
       const nodeType = isCfcNodeType(rawType) ? rawType : DEFAULT_NODE_TYPE;
       const template = getNodeTemplateByType(nodeType);
       const executionOrder = Math.max(1, Math.floor(parseNumberAttr(nodeElement, "executionOrder", sourceIndex + 1)));
+      const width = Math.max(template.width, parseNumberAttr(nodeElement, "width", template.width));
+      const height = Math.max(template.height, parseNumberAttr(nodeElement, "height", template.height));
       parsedNodes.push({
         node: {
           id: requireAttr(nodeElement, "id"),
@@ -129,8 +132,8 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
           label: nodeElement.getAttribute("label") ?? "Block",
           x: parseNumberAttr(nodeElement, "x"),
           y: parseNumberAttr(nodeElement, "y"),
-          width: parseNumberAttr(nodeElement, "width", template.width),
-          height: parseNumberAttr(nodeElement, "height", template.height),
+          width,
+          height,
         },
         executionOrder,
         sourceIndex,

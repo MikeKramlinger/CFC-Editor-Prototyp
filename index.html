@@ -59,7 +59,16 @@
           <div class="bulk-menu__advanced" aria-label="Optionale Verteilung nach Box-Typ">
             <details id="bulk-type-details" class="bulk-type-details">
               <summary>Typen gezielt verteilen (optional)</summary>
-              <p class="bulk-type-details__hint">Fehlende Boxen werden als "Box" ergänzt.</p>
+              <div class="bulk-type-details__hint-row">
+                <p class="bulk-type-details__hint">Fehlende Boxen werden als "Box" ergänzt.</p>
+                <button
+                  id="bulk-type-reset"
+                  class="bulk-type-reset"
+                  type="button"
+                  aria-label="Typenverteilung zurücksetzen"
+                  title="Typenverteilung zurücksetzen"
+                >⟳</button>
+              </div>
               <div id="bulk-type-counts" class="bulk-type-counts"></div>
             </details>
           </div>
@@ -110,6 +119,7 @@
             <span><strong id="quiz-task-timer">00:00</strong></span>
             <button id="quiz-timer-toggle" type="button">Pause</button>
             <span id="quiz-task-locked" class="quiz-task-locked" title="Aufgabe ist abgeschlossen und gesperrt" hidden>🔒</span>
+            <button id="quiz-rework" class="quiz-rework-inline" type="button" hidden>Überarbeiten</button>
           </div>
           <button id="data-toggle" type="button" aria-expanded="false" aria-label="Datenbereich vergrößern">⤢</button>
         </div>

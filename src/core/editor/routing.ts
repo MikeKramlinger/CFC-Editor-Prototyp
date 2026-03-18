@@ -153,6 +153,29 @@ const dedupeConsecutivePoints = (points: GridPoint[]): GridPoint[] => {
   return compacted;
 };
 
+export const compactRouteToAnchors = (points: GridPoint[]): GridPoint[] => {
+  const deduped = dedupeConsecutivePoints(points);
+  if (deduped.length <= 2) {
+    return deduped;
+  }
+
+  const anchors: GridPoint[] = [deduped[0]!];
+  for (let index = 1; index < deduped.length - 1; index += 1) {
+    const previous = deduped[index - 1]!;
+    const current = deduped[index]!;
+    const next = deduped[index + 1]!;
+
+    const continuesVertical = previous.x === current.x && current.x === next.x;
+    const continuesHorizontal = previous.y === current.y && current.y === next.y;
+    if (!continuesVertical && !continuesHorizontal) {
+      anchors.push(current);
+    }
+  }
+  anchors.push(deduped[deduped.length - 1]!);
+
+  return dedupeConsecutivePoints(anchors);
+};
+
 const buildSearchBounds = (
   nodes: RoutingObstacleNode[],
   start: GridPoint,

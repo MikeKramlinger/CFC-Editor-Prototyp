@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { getAdapterById, listAdapters } from "../../src/formats/registry.js";
+import { getNodeTemplateByType } from "../../src/model.js";
 import { createGraph, createNode, createConnection } from "../unit/helpers.js";
 import { jsonFormat } from "../../src/formats/json.js";
 import { yamlFormat } from "../../src/formats/yaml.js";
@@ -27,6 +28,8 @@ const createReferenceGraph = () => {
 };
 
 describe("format roundtrip integration", () => {
+  const adaptersWithoutOg = () => listAdapters().filter((adapter) => adapter.id !== "og-plcopen-xml");
+
   it("supports serialize -> deserialize -> serialize idempotency for all adapters", () => {
     const referenceGraph = createReferenceGraph();
 
@@ -210,5 +213,36 @@ connections:
     expect(graph.nodes.some((node) => node.type === "composer" && node.label === "ComposerX")).toBe(true);
     expect(graph.nodes.some((node) => node.type === "output" && node.label === "OutputA")).toBe(true);
     expect(graph.connections.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps minimum node sizes across adapters except OGPLCopenXML", () => {
+    const graph = createGraph([
+      createNode("N1", "box", 0, 0, { width: 1, height: 1 }),
+      createNode("N2", "comment", 8, 0, { width: 2, height: 1 }),
+      createNode("N3", "return", 14, 0, { width: 1, height: 1 }),
+    ]);
+
+    for (const adapter of adaptersWithoutOg()) {
+      const parsed = adapter.deserialize(adapter.serialize(graph));
+      for (const node of parsed.nodes) {
+        const template = getNodeTemplateByType(node.type);
+        expect(node.width).toBeGreaterThanOrEqual(template.width);
+        expect(node.height).toBeGreaterThanOrEqual(template.height);
+      }
+    }
+  });
+
+  it("preserves resized comment geometry across adapters except OGPLCopenXML", () => {
+    const graph = createGraph([
+      createNode("N1", "comment", 0, 0, { label: "Resizable", width: 16, height: 5 }),
+    ]);
+
+    for (const adapter of adaptersWithoutOg()) {
+      const parsed = adapter.deserialize(adapter.serialize(graph));
+      const comment = parsed.nodes.find((node) => node.id === "N1");
+      expect(comment).toBeDefined();
+      expect(comment!.width).toBe(16);
+      expect(comment!.height).toBe(5);
+    }
   });
 });

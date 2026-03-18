@@ -4,7 +4,12 @@ import { getAdapterById, listAdapters } from "./formats/registry.js";
 import { createQuizPersistence } from "./quiz/persistence.js";
 import { SAMPLE_QUIZ_TASKS } from "./quiz/sampleQuiz.js";
 import { createQuizSession } from "./quiz/session.js";
-import { isGraphQuizTask, type QuizTaskSessionState, type QuizTaskViewState } from "./quiz/types.js";
+import {
+  isGraphQuizTask,
+  type QuizTaskAnswerRevision,
+  type QuizTaskSessionState,
+  type QuizTaskViewState,
+} from "./quiz/types.js";
 import { installDataAreaResize } from "./ui/behaviors/dataAreaResize.js";
 import { createDataPanelController } from "./ui/controllers/dataPanelController.js";
 import { installKeyboardShortcutsController } from "./ui/controllers/keyboardShortcutsController.js";
@@ -38,6 +43,7 @@ const quizMenu = query<HTMLDivElement>("#quiz-menu");
 const quizTaskSelect = query<HTMLSelectElement>("#quiz-task-select");
 const quizPrevButton = query<HTMLButtonElement>("#quiz-prev");
 const quizCheckButton = query<HTMLButtonElement>("#quiz-check");
+const quizReworkButton = query<HTMLButtonElement>("#quiz-rework");
 const quizNextButton = query<HTMLButtonElement>("#quiz-next");
 const quizEndButton = query<HTMLButtonElement>("#quiz-end");
 const quizPanel = query<HTMLDivElement>("#quiz-panel");
@@ -68,6 +74,7 @@ let quizTimerPaused = false;
 let taskTimerRunning = false;
 let taskTimerStartedAtMs: number | null = null;
 let timerIntervalId: number | null = null;
+let activeOpenAnswerHistory: QuizTaskAnswerRevision[] = [];
 const quizSession = createQuizSession({ tasks: SAMPLE_QUIZ_TASKS });
 const quizPersistence = createQuizPersistence();
 
@@ -141,8 +148,17 @@ const stopAndResetTaskTimer = (): void => {
   updateTimerLabel();
 };
 
+const isActiveOpenTask = (): boolean => {
+  if (!isQuizModeActive || !quizSession.isActive()) {
+    return false;
+  }
+  return !isGraphQuizTask(quizSession.getActiveTask());
+};
+
 const applyTaskEditability = (): void => {
+  const isOpenTask = isActiveOpenTask();
   const locked = isQuizModeActive && activeTaskCompleted;
+  const canRework = locked && isOpenTask;
   dataPanelUi.dataText.readOnly = locked;
   dataPanelUi.dataText.setAttribute("aria-readonly", locked ? "true" : "false");
   dataArea.classList.toggle("task-locked", locked);
@@ -154,6 +170,8 @@ const applyTaskEditability = (): void => {
   quizTimerToggleButton.hidden = locked;
   quizTimerToggleButton.disabled = !isQuizModeActive || activeTaskCompleted;
   quizTimerToggleButton.textContent = quizTimerPaused ? "Fortsetzen" : "Pause";
+  quizReworkButton.hidden = !canRework;
+  quizReworkButton.disabled = !canRework;
 };
 
 const markCurrentTaskCompleted = (): void => {
@@ -215,6 +233,7 @@ const createActiveQuizTaskSessionState = (): QuizTaskSessionState => ({
   feedback: quizFeedback.textContent ?? "",
   elapsedMs: getElapsedMs(),
   isCompleted: activeTaskCompleted,
+  answerHistory: [...activeOpenAnswerHistory],
 });
 
 const serializeQuizGraph = (graph: CfcGraph): string => getCurrentAdapter().serialize(graph);
@@ -226,6 +245,7 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   dataPanel.setDataText(viewState.dataText);
   activeTaskElapsedMs = viewState.elapsedMs;
   activeTaskCompleted = viewState.isCompleted;
+  activeOpenAnswerHistory = viewState.answerHistory?.map((entry) => ({ ...entry })) ?? [];
   dataPanelUi.dataText.placeholder = viewState.task.kind === "open"
     ? viewState.task.placeholder ?? "Antwort hier eingeben..."
     : "";
@@ -365,7 +385,17 @@ const runQuizCheck = (): void => {
   };
 
   if (!isGraphQuizTask(activeTask)) {
-    const saveMessage = activeTask.saveMessage ?? "💾 Antwort gespeichert.";
+    const elapsedMs = getElapsedMs();
+    activeOpenAnswerHistory = [
+      ...activeOpenAnswerHistory,
+      {
+        timestamp: new Date().toISOString(),
+        elapsedMs,
+        answer: dataPanel.getDataText(),
+      },
+    ];
+    const saveMessage = activeTask.saveMessage
+      ?? "💾 Antwort gespeichert. Mit \"Überarbeiten\" kannst du die Aufgabe erneut öffnen.";
     markCurrentTaskCompleted();
     quizFeedback.textContent = saveMessage;
     quizSession.saveActiveState(createActiveQuizTaskSessionState());
@@ -601,6 +631,7 @@ const toolbar = createToolbarController({
   bulkConnectionCountInput: toolbarUi.bulkConnectionCountInput,
   bulkTypeDetails: toolbarUi.bulkTypeDetails,
   bulkTypeCounts: toolbarUi.bulkTypeCounts,
+  bulkTypeResetButton: toolbarUi.bulkTypeResetButton,
   bulkCreateButton: toolbarUi.bulkCreateButton,
   bulkTypeOptions: CFC_NODE_TEMPLATES.filter(
     (template) => template.type !== "input-pin" && template.type !== "output-pin",
@@ -684,6 +715,22 @@ quizCheckButton.addEventListener("click", () => {
 
 quizCheckFloatingButton.addEventListener("click", () => {
   runQuizCheck();
+});
+
+quizReworkButton.addEventListener("click", () => {
+  if (!isQuizModeActive || !quizSession.isActive() || !activeTaskCompleted) {
+    return;
+  }
+  const activeTask = quizSession.getActiveTask();
+  if (isGraphQuizTask(activeTask)) {
+    return;
+  }
+
+  activeTaskCompleted = false;
+  startTaskTimer(true);
+  quizFeedback.textContent = "✏️ Überarbeitungsmodus aktiv. Die Zeit läuft wieder.";
+  applyTaskEditability();
+  quizSession.saveActiveState(createActiveQuizTaskSessionState());
 });
 
 quizNextButton.addEventListener("click", () => {

@@ -63,12 +63,19 @@ export interface QuizEvaluationContext {
   task: QuizGraphTask;
 }
 
+export interface QuizTaskAnswerRevision {
+  timestamp: string;
+  elapsedMs: number;
+  answer: string;
+}
+
 export interface QuizTaskSessionState {
   graph: CfcGraph;
   dataText: string;
   feedback: string;
   elapsedMs: number;
   isCompleted: boolean;
+  answerHistory?: QuizTaskAnswerRevision[];
 }
 
 export interface QuizTaskViewState extends QuizTaskSessionState {
