@@ -29,6 +29,13 @@ import {
   type CfcNode,
   type CfcNodeType,
 } from "./model.js";
+import {
+  LANGUAGE_STORAGE_KEY,
+  getLocalizedTaskText,
+  t,
+  tf,
+  type UiLanguage,
+} from "./i18n.js";
 
 const canvas = query<HTMLDivElement>("#canvas");
 const toolbarSection = query<HTMLElement>(".toolbar");
@@ -38,6 +45,7 @@ const dataPanelUi = getDataPanelUiElements();
 const dataArea = query<HTMLElement>(".data-area");
 const dataEditor = query<HTMLDivElement>(".data-editor");
 const dataResizer = query<HTMLDivElement>("#data-resizer");
+const languageToggleButton = query<HTMLButtonElement>("#language-toggle");
 const quizToggleButton = query<HTMLButtonElement>("#quiz-toggle");
 const quizMenu = query<HTMLDivElement>("#quiz-menu");
 const quizTaskSelect = query<HTMLSelectElement>("#quiz-task-select");
@@ -75,6 +83,7 @@ let taskTimerRunning = false;
 let taskTimerStartedAtMs: number | null = null;
 let timerIntervalId: number | null = null;
 let activeOpenAnswerHistory: QuizTaskAnswerRevision[] = [];
+let currentLanguage: UiLanguage = "de";
 const quizSession = createQuizSession({ tasks: SAMPLE_QUIZ_TASKS });
 const quizPersistence = createQuizPersistence();
 
@@ -171,7 +180,8 @@ const applyTaskEditability = (): void => {
   quizCheckFloatingButton.disabled = locked;
   quizTimerToggleButton.hidden = locked;
   quizTimerToggleButton.disabled = !isQuizModeActive || activeTaskCompleted;
-  quizTimerToggleButton.textContent = quizTimerPaused ? "Fortsetzen" : "Pause";
+  quizTimerToggleButton.textContent = quizTimerPaused ? t(currentLanguage, "timerResume") : t(currentLanguage, "timerPause");
+  quizReworkButton.textContent = t(currentLanguage, "quizRework");
   quizReworkButton.hidden = !canRework;
   quizReworkButton.disabled = !canRework;
 };
@@ -202,7 +212,7 @@ const TOOLBOX_ICONS: Record<CfcNodeType, string> = {
 
 const adapters = listAdapters();
 if (adapters.length === 0) {
-  throw new Error("Keine Datenformat-Adapter registriert.");
+  throw new Error(t(currentLanguage, "adapterMissing"));
 }
 
 adapters.forEach((adapter) => {
@@ -212,12 +222,40 @@ adapters.forEach((adapter) => {
   toolbarUi.formatSelect.append(option);
 });
 
-quizSession.getTasks().forEach((task, index) => {
-  const option = document.createElement("option");
-  option.value = String(index);
-  option.textContent = `${index + 1}. ${task.title}`;
-  quizTaskSelect.append(option);
-});
+const getStoredLanguage = (): UiLanguage | null => {
+  const value = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  return value === "de" || value === "en" ? value : null;
+};
+
+const getTaskTitle = (taskId: string, fallback: string): string => {
+  return getLocalizedTaskText(currentLanguage, taskId)?.title ?? fallback;
+};
+
+const getTaskDescription = (taskId: string, fallback: string): string => {
+  return getLocalizedTaskText(currentLanguage, taskId)?.description ?? fallback;
+};
+
+const getOpenTaskPlaceholder = (taskId: string, fallback?: string): string => {
+  return getLocalizedTaskText(currentLanguage, taskId)?.placeholder ?? fallback ?? t(currentLanguage, "quizOpenPlaceholderFallback");
+};
+
+const getOpenTaskSaveMessage = (taskId: string, fallback?: string): string => {
+  return getLocalizedTaskText(currentLanguage, taskId)?.saveMessage ?? fallback ?? t(currentLanguage, "quizOpenSaved");
+};
+
+const renderQuizTaskOptions = (): void => {
+  const activeValue = quizTaskSelect.value;
+  quizTaskSelect.replaceChildren();
+  quizSession.getTasks().forEach((task, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `${index + 1}${t(currentLanguage, "taskOptionPrefixSeparator")}${getTaskTitle(task.id, task.title)}`;
+    quizTaskSelect.append(option);
+  });
+  if (activeValue.length > 0) {
+    quizTaskSelect.value = activeValue;
+  }
+};
 
 const defaultAdapter = adapters[0]!;
 const getCurrentAdapter = () => getAdapterById(toolbarUi.formatSelect.value || defaultAdapter.id);
@@ -240,6 +278,18 @@ const createActiveQuizTaskSessionState = (): QuizTaskSessionState => ({
 
 const serializeQuizGraph = (graph: CfcGraph): string => getCurrentAdapter().serialize(graph);
 
+const localizeInitialQuizFeedback = (feedback: string, isOpenTask: boolean): string => {
+  const defaultOpenDe = "Frage geladen. Trage deine Antwort im Datenfeld ein und klicke auf Speichern.";
+  const defaultGraphDe = "Aufgabe geladen. Jetzt Daten/Graph bearbeiten und auf Prüfen klicken.";
+  if (isOpenTask && (feedback === defaultOpenDe || feedback === t("en", "quizOpenInitialFeedback"))) {
+    return t(currentLanguage, "quizOpenInitialFeedback");
+  }
+  if (!isOpenTask && (feedback === defaultGraphDe || feedback === t("en", "quizGraphInitialFeedback"))) {
+    return t(currentLanguage, "quizGraphInitialFeedback");
+  }
+  return feedback;
+};
+
 const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   pauseTaskTimer();
   editor.loadGraph(viewState.graph);
@@ -248,15 +298,17 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   activeTaskElapsedMs = viewState.elapsedMs;
   activeTaskCompleted = viewState.isCompleted;
   activeOpenAnswerHistory = viewState.answerHistory?.map((entry) => ({ ...entry })) ?? [];
+  const localizedTitle = getTaskTitle(viewState.task.id, viewState.task.title);
+  const localizedDescription = getTaskDescription(viewState.task.id, viewState.task.description);
   dataPanelUi.dataText.placeholder = viewState.task.kind === "open"
-    ? viewState.task.placeholder ?? "Antwort hier eingeben..."
+    ? getOpenTaskPlaceholder(viewState.task.id, viewState.task.placeholder)
     : "";
   const isOpenTask = viewState.task.kind === "open";
-  quizCheckButton.textContent = isOpenTask ? "Antwort speichern" : "Antwort prüfen";
-  quizCheckFloatingButton.setAttribute("title", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
-  quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
-  quizDescription.textContent = `${viewState.task.title}: ${viewState.task.description}`;
-  quizFeedback.textContent = viewState.feedback;
+  quizCheckButton.textContent = isOpenTask ? t(currentLanguage, "quizCheckOpen") : t(currentLanguage, "quizCheckGraph");
+  quizCheckFloatingButton.setAttribute("title", isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph"));
+  quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph"));
+  quizDescription.textContent = `${localizedTitle}${t(currentLanguage, "quizTaskViewPrefixSeparator")}${localizedDescription}`;
+  quizFeedback.textContent = localizeInitialQuizFeedback(viewState.feedback, isOpenTask);
   quizTaskSelect.value = String(viewState.index);
   quizPrevButton.disabled = viewState.index <= 0;
   quizNextButton.disabled = viewState.index >= quizSession.getTasks().length - 1;
@@ -345,7 +397,7 @@ const importQuizDataIntoGraph = (): boolean => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    quizFeedback.textContent = `❌ Ungültiges Datenformat: ${message}`;
+    quizFeedback.textContent = `${t(currentLanguage, "quizInvalidFormatPrefix")}${message}`;
     quizSession.saveActiveState(createActiveQuizTaskSessionState());
     return false;
   }
@@ -360,8 +412,10 @@ const importQuizDataIntoGraph = (): boolean => {
 
 const runQuizCheck = (): void => {
   const activeTask = quizSession.getActiveTask();
+  const localizedTaskTitle = getTaskTitle(activeTask.id, activeTask.title);
+  const localizedTaskDescription = getTaskDescription(activeTask.id, activeTask.description);
   if (activeTaskCompleted) {
-    quizFeedback.textContent = "✅ Aufgabe ist bereits abgeschlossen und gesperrt.";
+    quizFeedback.textContent = t(currentLanguage, "quizAlreadyCompletedLocked");
     return;
   }
 
@@ -370,9 +424,9 @@ const runQuizCheck = (): void => {
       record: {
         timestamp: new Date().toISOString(),
         taskId: activeTask.id,
-        taskTitle: activeTask.title,
+        taskTitle: localizedTaskTitle,
         taskKind: activeTask.kind,
-        question: activeTask.description,
+        question: localizedTaskDescription,
         dataModelOrAnswer: dataPanel.getDataText(),
         taskElapsedMs: getElapsedMs(),
         taskCompleted: activeTaskCompleted,
@@ -396,8 +450,7 @@ const runQuizCheck = (): void => {
         answer: dataPanel.getDataText(),
       },
     ];
-    const saveMessage = activeTask.saveMessage
-      ?? "💾 Antwort gespeichert. Mit \"Überarbeiten\" kannst du die Aufgabe erneut öffnen.";
+    const saveMessage = getOpenTaskSaveMessage(activeTask.id, activeTask.saveMessage);
     markCurrentTaskCompleted();
     quizFeedback.textContent = saveMessage;
     quizSession.saveActiveState(createActiveQuizTaskSessionState());
@@ -406,7 +459,7 @@ const runQuizCheck = (): void => {
   }
 
   if (!importQuizDataIntoGraph()) {
-    const invalidDataMessage = quizFeedback.textContent ?? "❌ Ungültiges Datenformat.";
+    const invalidDataMessage = quizFeedback.textContent ?? t(currentLanguage, "quizInvalidFormatPrefix");
     queueAttempt(false, invalidDataMessage);
     return;
   }
@@ -414,7 +467,7 @@ const runQuizCheck = (): void => {
   const result = quizSession.evaluateActiveTask(currentGraph);
 
   if (result.success) {
-    const successMessage = "✅ Aufgabe erfüllt.";
+    const successMessage = t(currentLanguage, "quizGraphSuccess");
     markCurrentTaskCompleted();
     quizCheckButton.disabled = true;
     quizCheckFloatingButton.disabled = true;
@@ -424,7 +477,7 @@ const runQuizCheck = (): void => {
     return;
   }
 
-  const failedMessage = `❌ Noch nicht erfüllt: ${result.failedChecks.join(" | ")}`;
+  const failedMessage = `${t(currentLanguage, "quizGraphFailedPrefix")}${result.failedChecks.join(" | ")}`;
   quizFeedback.textContent = failedMessage;
   quizSession.saveActiveState(createActiveQuizTaskSessionState());
   queueAttempt(false, failedMessage, result.failedChecks, result.passedChecks);
@@ -444,6 +497,120 @@ const getInitialTheme = (): UiTheme => {
     return stored;
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+};
+
+const getInitialLanguage = (): UiLanguage => getStoredLanguage() ?? "de";
+
+const applyLanguageToStaticUi = (): void => {
+  document.documentElement.lang = currentLanguage;
+
+  const appTitle = document.querySelector<HTMLHeadingElement>(".toolbar__header h1");
+  if (appTitle) {
+    appTitle.textContent = t(currentLanguage, "appTitle");
+  }
+
+  languageToggleButton.textContent = currentLanguage === "de" ? "EN" : "DE";
+  const languageAria = currentLanguage === "de"
+    ? t(currentLanguage, "languageSwitchAriaToEn")
+    : t(currentLanguage, "languageSwitchAriaToDe");
+  languageToggleButton.setAttribute("aria-label", languageAria);
+  languageToggleButton.setAttribute("title", languageAria);
+
+  toolbarUi.bulkMenuToggleButton.textContent = t(currentLanguage, "bulkMenuToggle");
+  const formatLabel = document.querySelector<HTMLLabelElement>('label[for="format-select"]');
+  if (formatLabel) {
+    formatLabel.textContent = t(currentLanguage, "formatLabel");
+  }
+  toolbarUi.exportButton.textContent = t(currentLanguage, "export");
+  toolbarUi.importButton.textContent = t(currentLanguage, "import");
+  toolbarUi.roundtripButton.textContent = t(currentLanguage, "roundtrip");
+  quizToggleButton.textContent = t(currentLanguage, "quizMode");
+  quizEndButton.textContent = t(currentLanguage, "quizEnd");
+
+  const bulkBoxCountLabel = document.querySelector<HTMLLabelElement>('label[for="bulk-box-count"]');
+  if (bulkBoxCountLabel) {
+    bulkBoxCountLabel.textContent = t(currentLanguage, "bulkBoxCountLabel");
+  }
+  const bulkConnectionCountLabel = document.querySelector<HTMLLabelElement>('label[for="bulk-connection-count"]');
+  if (bulkConnectionCountLabel) {
+    bulkConnectionCountLabel.textContent = t(currentLanguage, "bulkConnectionCountLabel");
+  }
+  const bulkLegend = document.querySelector<HTMLLegendElement>("#bulk-connection-mode-group legend");
+  if (bulkLegend) {
+    bulkLegend.textContent = t(currentLanguage, "bulkConnectionModeLegend");
+  }
+
+  const bulkOptionTitles = Array.from(document.querySelectorAll<HTMLElement>(".bulk-connection-mode__title"));
+  const bulkOptionDescs = Array.from(document.querySelectorAll<HTMLElement>(".bulk-connection-mode__desc"));
+  if (bulkOptionTitles[0]) {
+    bulkOptionTitles[0].textContent = t(currentLanguage, "bulkConnectionModeCountTitle");
+  }
+  if (bulkOptionDescs[0]) {
+    bulkOptionDescs[0].textContent = t(currentLanguage, "bulkConnectionModeCountDesc");
+  }
+  if (bulkOptionTitles[1]) {
+    bulkOptionTitles[1].textContent = t(currentLanguage, "bulkConnectionModeSingleTargetTitle");
+  }
+  if (bulkOptionDescs[1]) {
+    bulkOptionDescs[1].textContent = t(currentLanguage, "bulkConnectionModeSingleTargetDesc");
+  }
+  if (bulkOptionTitles[2]) {
+    bulkOptionTitles[2].textContent = t(currentLanguage, "bulkConnectionModeAllToAllTitle");
+  }
+  if (bulkOptionDescs[2]) {
+    bulkOptionDescs[2].textContent = t(currentLanguage, "bulkConnectionModeAllToAllDesc");
+  }
+
+  const bulkAdvanced = document.querySelector<HTMLElement>(".bulk-menu__advanced");
+  bulkAdvanced?.setAttribute("aria-label", t(currentLanguage, "bulkAdvancedAriaLabel"));
+  const bulkTypeSummary = document.querySelector<HTMLElement>("#bulk-type-details summary");
+  if (bulkTypeSummary) {
+    bulkTypeSummary.textContent = t(currentLanguage, "bulkTypeSummary");
+  }
+  const bulkTypeHint = document.querySelector<HTMLElement>(".bulk-type-details__hint");
+  if (bulkTypeHint) {
+    bulkTypeHint.textContent = t(currentLanguage, "bulkTypeHint");
+  }
+  toolbarUi.bulkTypeResetButton.setAttribute("aria-label", t(currentLanguage, "bulkTypeResetAria"));
+  toolbarUi.bulkTypeResetButton.setAttribute("title", t(currentLanguage, "bulkTypeResetAria"));
+  toolbarUi.bulkCreateButton.textContent = t(currentLanguage, "bulkCreate");
+
+  const toolboxTitle = document.querySelector<HTMLElement>(".toolbox h2");
+  if (toolboxTitle) {
+    toolboxTitle.textContent = t(currentLanguage, "toolboxTitle");
+  }
+  const toolbox = document.querySelector<HTMLElement>(".toolbox");
+  toolbox?.setAttribute("aria-label", t(currentLanguage, "toolboxAriaLabel"));
+  canvas.setAttribute("aria-label", t(currentLanguage, "canvasAriaLabel"));
+
+  dataResizer.setAttribute("aria-label", t(currentLanguage, "dataResizerAriaLabel"));
+  dataResizer.setAttribute("title", t(currentLanguage, "dataResizerTitle"));
+  const dataLabel = document.querySelector<HTMLLabelElement>('label[for="data-text"]');
+  if (dataLabel) {
+    dataLabel.textContent = t(currentLanguage, "dataLabel");
+  }
+
+  quizPrevButton.setAttribute("aria-label", t(currentLanguage, "quizTogglePrevTitle"));
+  quizPrevButton.setAttribute("title", t(currentLanguage, "quizTogglePrevTitle"));
+  quizNextButton.setAttribute("aria-label", t(currentLanguage, "quizToggleNextTitle"));
+  quizNextButton.setAttribute("title", t(currentLanguage, "quizToggleNextTitle"));
+  quizTaskSelect.setAttribute("aria-label", t(currentLanguage, "quizTaskSelectAria"));
+  quizTaskLocked.setAttribute("title", t(currentLanguage, "quizTaskLockedTitle"));
+  quizReworkButton.textContent = t(currentLanguage, "quizRework");
+
+  const activeTask = quizSession.isActive() ? quizSession.getActiveTask() : null;
+  const isOpenTask = activeTask !== null && !isGraphQuizTask(activeTask);
+  quizCheckButton.textContent = isOpenTask ? t(currentLanguage, "quizCheckOpen") : t(currentLanguage, "quizCheckGraph");
+  quizCheckFloatingButton.setAttribute(
+    "title",
+    isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph"),
+  );
+  quizCheckFloatingButton.setAttribute(
+    "aria-label",
+    isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph"),
+  );
+
+  renderQuizTaskOptions();
 };
 
 const dataPanel = createDataPanelController({
@@ -615,6 +782,7 @@ const createBoxesAndConnections = (
   currentGraph = editor.getGraph();
 };
 
+currentLanguage = getInitialLanguage();
 let currentTheme: UiTheme = getInitialTheme();
 
 const toolbar = createToolbarController({
@@ -655,6 +823,25 @@ const toolbar = createToolbarController({
     localStorage.setItem(THEME_STORAGE_KEY, currentTheme);
     return currentTheme;
   },
+  getThemeLabel: (theme) => {
+    if (theme === "dark") {
+      return {
+        text: "☀️ Light",
+        ariaLabel: t(currentLanguage, "themeEnableLight"),
+      };
+    }
+    return {
+      text: "🌙 Dark",
+      ariaLabel: t(currentLanguage, "themeEnableDark"),
+    };
+  },
+  getRoutingLabel: (mode) => (mode === "bezier" ? "Routing: Bezier" : "Routing: CFC"),
+  formatExportMetric: (sizeKb) => tf(currentLanguage, "metricExportSize", { size: `${sizeKb.toFixed(2)} KB` }),
+  formatRoundtripMetric: (sizeKb, elapsedMs) =>
+    tf(currentLanguage, "metricRoundtrip", {
+      size: `${sizeKb.toFixed(2)} KB`,
+      duration: `${elapsedMs.toFixed(2)} ms`,
+    }),
   getCurrentAdapter,
   getCurrentGraph: () => currentGraph,
   setCurrentGraph: (graph) => {
@@ -664,6 +851,25 @@ const toolbar = createToolbarController({
   getDataText: () => dataPanel.getDataText(),
   setDataText: (value) => dataPanel.setDataText(value),
   setMetrics: (value) => dataPanel.setMetrics(value),
+});
+
+const applyLanguage = (): void => {
+  applyLanguageToStaticUi();
+  toolbar.applyTheme(currentTheme);
+  toolbar.updateRoutingLabel();
+  if (quizSession.isActive()) {
+    applyQuizTaskViewState(
+      quizSession.selectTask(quizSession.getActiveIndex(), createActiveQuizTaskSessionState(), serializeQuizGraph),
+    );
+  } else {
+    applyTaskEditability();
+  }
+};
+
+languageToggleButton.addEventListener("click", () => {
+  currentLanguage = currentLanguage === "de" ? "en" : "de";
+  localStorage.setItem(LANGUAGE_STORAGE_KEY, currentLanguage);
+  applyLanguage();
 });
 
 quizToggleButton.addEventListener("click", () => {
@@ -730,7 +936,7 @@ quizReworkButton.addEventListener("click", () => {
 
   activeTaskCompleted = false;
   startTaskTimer(true);
-  quizFeedback.textContent = "✏️ Überarbeitungsmodus aktiv. Die Zeit läuft wieder.";
+  quizFeedback.textContent = t(currentLanguage, "quizReworkActive");
   applyTaskEditability();
   quizSession.saveActiveState(createActiveQuizTaskSessionState());
 });
@@ -893,3 +1099,4 @@ installDataAreaResize({
 updateTimerLabel();
 applyTaskEditability();
 setQuizModeActive(false);
+applyLanguage();

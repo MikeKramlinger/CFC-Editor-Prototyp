@@ -1,0 +1,198 @@
+export type UiLanguage = "de" | "en";
+
+export const LANGUAGE_STORAGE_KEY = "cfc-editor-language";
+
+const uiResources = {
+  de: {
+    appTitle: "CFC-Editor Prototyp",
+    languageSwitchAriaToDe: "Sprache auf Deutsch umstellen",
+    languageSwitchAriaToEn: "Sprache auf Englisch umstellen",
+    bulkMenuToggle: "Mehrfach erstellen",
+    formatLabel: "Datenformat",
+    export: "Export",
+    import: "Import",
+    roundtrip: "Roundtrip-Test",
+    quizMode: "Quiz-Modus",
+    quizCheckGraph: "Antwort prüfen",
+    quizCheckOpen: "Antwort speichern",
+    quizEnd: "Quiz beenden",
+    quizRework: "Überarbeiten",
+    quizTogglePrevTitle: "Vorherige Aufgabe",
+    quizToggleNextTitle: "Nächste Aufgabe",
+    quizTaskSelectAria: "Quiz-Aufgabe",
+    quizTaskLockedTitle: "Aufgabe ist abgeschlossen und gesperrt",
+    quizFloatingCheckTitleGraph: "Antwort prüfen",
+    quizFloatingCheckTitleOpen: "Antwort speichern",
+    dataLabel: "Daten",
+    toolboxTitle: "Toolbox",
+    toolboxAriaLabel: "CFC Toolbox",
+    canvasAriaLabel: "CFC Arbeitsbereich",
+    dataResizerAriaLabel: "Datenbereich Höhe anpassen",
+    dataResizerTitle: "Datenbereich Höhe ziehen",
+    zoomOverlayAriaLabel: "Zoom-Steuerung",
+    dataToggleAriaExpand: "Datenbereich vergrößern",
+    bulkBoxCountLabel: "Anzahl Boxen",
+    bulkConnectionModeLegend: "Verbindungsmodus",
+    bulkConnectionModeCountTitle: "Manuell (Anzahl)",
+    bulkConnectionModeCountDesc: "Nutzt die Zahl im Feld \"Anzahl Verbindungen\".",
+    bulkConnectionModeSingleTargetTitle: "Output -> anderer Input",
+    bulkConnectionModeSingleTargetDesc: "Jeder neue Output wird einmal verbunden.",
+    bulkConnectionModeAllToAllTitle: "Output -> alle Inputs",
+    bulkConnectionModeAllToAllDesc: "Vollvernetzung aller neuen Knoten untereinander.",
+    bulkConnectionCountLabel: "Anzahl Verbindungen",
+    bulkAdvancedAriaLabel: "Optionale Verteilung nach Box-Typ",
+    bulkTypeSummary: "Typen gezielt verteilen (optional)",
+    bulkTypeHint: "Fehlende Boxen werden als \"Box\" ergänzt.",
+    bulkTypeResetAria: "Typenverteilung zurücksetzen",
+    bulkCreate: "Erstellen",
+    timerPause: "Pause",
+    timerResume: "Fortsetzen",
+    themeEnableLight: "Light Theme aktivieren",
+    themeEnableDark: "Dark Theme aktivieren",
+    metricExportSize: "Exportgröße: {size}",
+    metricRoundtrip: "Exportgröße: {size} | Roundtrip-Zeit: {duration}",
+    adapterMissing: "Keine Datenformat-Adapter registriert.",
+    quizInvalidFormatPrefix: "❌ Ungültiges Datenformat: ",
+    quizAlreadyCompletedLocked: "✅ Aufgabe ist bereits abgeschlossen und gesperrt.",
+    quizOpenSaved: "💾 Antwort gespeichert. Mit \"Überarbeiten\" kannst du die Aufgabe erneut öffnen.",
+    quizGraphSuccess: "✅ Aufgabe erfüllt.",
+    quizGraphFailedPrefix: "❌ Noch nicht erfüllt: ",
+    quizReworkActive: "✏️ Überarbeitungsmodus aktiv. Die Zeit läuft wieder.",
+    quizOpenPlaceholderFallback: "Antwort hier eingeben...",
+    quizTaskViewPrefixSeparator: ": ",
+    quizOpenInitialFeedback: "Frage geladen. Trage deine Antwort im Datenfeld ein und klicke auf Speichern.",
+    quizGraphInitialFeedback: "Aufgabe geladen. Jetzt Daten/Graph bearbeiten und auf Prüfen klicken.",
+    taskOptionPrefixSeparator: ". ",
+  },
+  en: {
+    appTitle: "CFC Editor Prototype",
+    languageSwitchAriaToDe: "Switch language to German",
+    languageSwitchAriaToEn: "Switch language to English",
+    bulkMenuToggle: "Bulk Create",
+    formatLabel: "Data Format",
+    export: "Export",
+    import: "Import",
+    roundtrip: "Roundtrip Test",
+    quizMode: "Quiz Mode",
+    quizCheckGraph: "Check Answer",
+    quizCheckOpen: "Save Answer",
+    quizEnd: "End Quiz",
+    quizRework: "Revise",
+    quizTogglePrevTitle: "Previous task",
+    quizToggleNextTitle: "Next task",
+    quizTaskSelectAria: "Quiz task",
+    quizTaskLockedTitle: "Task is completed and locked",
+    quizFloatingCheckTitleGraph: "Check answer",
+    quizFloatingCheckTitleOpen: "Save answer",
+    dataLabel: "Data",
+    toolboxTitle: "Toolbox",
+    toolboxAriaLabel: "CFC toolbox",
+    canvasAriaLabel: "CFC workspace",
+    dataResizerAriaLabel: "Adjust data area height",
+    dataResizerTitle: "Drag to resize data area",
+    zoomOverlayAriaLabel: "Zoom controls",
+    dataToggleAriaExpand: "Expand data area",
+    bulkBoxCountLabel: "Number of boxes",
+    bulkConnectionModeLegend: "Connection mode",
+    bulkConnectionModeCountTitle: "Manual (count)",
+    bulkConnectionModeCountDesc: "Uses the value from the \"Number of connections\" field.",
+    bulkConnectionModeSingleTargetTitle: "Output -> another input",
+    bulkConnectionModeSingleTargetDesc: "Each new output is connected once.",
+    bulkConnectionModeAllToAllTitle: "Output -> all inputs",
+    bulkConnectionModeAllToAllDesc: "Fully connects all new nodes with each other.",
+    bulkConnectionCountLabel: "Number of connections",
+    bulkAdvancedAriaLabel: "Optional distribution by box type",
+    bulkTypeSummary: "Distribute specific types (optional)",
+    bulkTypeHint: "Missing boxes are filled with \"Box\".",
+    bulkTypeResetAria: "Reset type distribution",
+    bulkCreate: "Create",
+    timerPause: "Pause",
+    timerResume: "Resume",
+    themeEnableLight: "Enable light theme",
+    themeEnableDark: "Enable dark theme",
+    metricExportSize: "Export size: {size}",
+    metricRoundtrip: "Export size: {size} | Roundtrip time: {duration}",
+    adapterMissing: "No data format adapters registered.",
+    quizInvalidFormatPrefix: "❌ Invalid data format: ",
+    quizAlreadyCompletedLocked: "✅ Task is already completed and locked.",
+    quizOpenSaved: "💾 Answer saved. Use \"Revise\" to reopen this task.",
+    quizGraphSuccess: "✅ Task completed.",
+    quizGraphFailedPrefix: "❌ Not fulfilled yet: ",
+    quizReworkActive: "✏️ Revision mode active. The timer is running again.",
+    quizOpenPlaceholderFallback: "Type your answer here...",
+    quizTaskViewPrefixSeparator: ": ",
+    quizOpenInitialFeedback: "Task loaded. Enter your answer in the data field and click Save.",
+    quizGraphInitialFeedback: "Task loaded. Edit data/graph and click Check.",
+    taskOptionPrefixSeparator: ". ",
+  },
+} as const;
+
+export type UiTextKey = keyof typeof uiResources.de;
+
+export const t = (language: UiLanguage, key: UiTextKey): string => uiResources[language][key];
+
+const replaceTokens = (template: string, values: Record<string, string>): string => {
+  let output = template;
+  Object.entries(values).forEach(([token, value]) => {
+    output = output.replace(new RegExp(`\\{${token}\\}`, "g"), value);
+  });
+  return output;
+};
+
+export const tf = (language: UiLanguage, key: UiTextKey, values: Record<string, string>): string => {
+  return replaceTokens(t(language, key), values);
+};
+
+export interface LocalizedTaskText {
+  title: string;
+  description: string;
+  placeholder?: string;
+  saveMessage?: string;
+}
+
+const taskResources: Record<UiLanguage, Record<string, LocalizedTaskText>> = {
+  de: {
+    "task-add-box-position": {
+      title: "Box an Position",
+      description: "Füge eine neue Box an Position x=12, y=8 ein.",
+    },
+    "task-connect-input-box": {
+      title: "Input verbinden",
+      description: "Füge eine Box mit Label 'Step' ein und verbinde Input -> Box.",
+    },
+    "task-clean-graph": {
+      title: "Leerer Graph",
+      description: "Lösche alle Nodes und Verbindungen und importiere den leeren Graphen.",
+    },
+    "task-open-question-reasoning": {
+      title: "Offene Frage",
+      description: "Beschreibe kurz, warum eine klare Signalrichtung im Graphen wichtig ist.",
+      placeholder: "Deine Antwort ...",
+      saveMessage: "💾 Antwort gespeichert.",
+    },
+  },
+  en: {
+    "task-add-box-position": {
+      title: "Box At Position",
+      description: "Add a new box at position x=12, y=8.",
+    },
+    "task-connect-input-box": {
+      title: "Connect Input",
+      description: "Add a box labeled 'Step' and connect Input -> Box.",
+    },
+    "task-clean-graph": {
+      title: "Empty Graph",
+      description: "Delete all nodes and connections and import the empty graph.",
+    },
+    "task-open-question-reasoning": {
+      title: "Open Question",
+      description: "Briefly explain why a clear signal direction in the graph is important.",
+      placeholder: "Your answer ...",
+      saveMessage: "💾 Answer saved.",
+    },
+  },
+};
+
+export const getLocalizedTaskText = (language: UiLanguage, taskId: string): LocalizedTaskText | null => {
+  return taskResources[language][taskId] ?? null;
+};

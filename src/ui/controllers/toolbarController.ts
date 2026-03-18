@@ -4,6 +4,11 @@ import { getNodeTemplateByType, isCfcNodeType, type CfcGraph, type CfcNodeType }
 type UiTheme = "light" | "dark";
 type RoutingMode = "astar" | "bezier";
 
+interface ThemeLabel {
+  text: string;
+  ariaLabel: string;
+}
+
 interface BulkTypeOption {
   type: CfcNodeType;
   label: string;
@@ -44,6 +49,10 @@ interface ToolbarControllerOptions {
   onBulkCreateInvalid: () => void;
   getCurrentTheme: () => UiTheme;
   onThemeToggle: () => UiTheme;
+  getThemeLabel?: (theme: UiTheme) => ThemeLabel;
+  getRoutingLabel?: (mode: RoutingMode) => string;
+  formatExportMetric?: (sizeKb: number) => string;
+  formatRoundtripMetric?: (sizeKb: number, elapsedMs: number) => string;
   getCurrentAdapter: () => CfcFormatAdapter;
   getCurrentGraph: () => CfcGraph;
   setCurrentGraph: (graph: CfcGraph) => void;
@@ -74,10 +83,6 @@ const getPayloadSizeKb = (payload: string): number => {
   const bytes = new TextEncoder().encode(payload).length;
   return bytes / 1024;
 };
-
-const formatKb = (value: number): string => `${value.toFixed(2)} KB`;
-
-const formatMs = (value: number): string => `${value.toFixed(2)} ms`;
 
 const hasNodeBelowMinimumSize = (graph: CfcGraph): boolean =>
   graph.nodes.some((node) => {
@@ -156,7 +161,7 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
     const payload = adapter.serialize(options.getCurrentGraph());
     options.setDataText(payload);
     const sizeKb = getPayloadSizeKb(payload);
-    options.setMetrics(`Exportgröße: ${formatKb(sizeKb)}`);
+    options.setMetrics(options.formatExportMetric?.(sizeKb) ?? `Exportgröße: ${sizeKb.toFixed(2)} KB`);
   };
 
   const triggerImport = (): void => {
@@ -186,15 +191,20 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
 
   const updateRoutingLabel = (): void => {
     const mode = options.getRoutingMode();
-    options.routingModeButton.textContent = mode === "bezier" ? "Routing: Bezier" : "Routing: CFC";
+    options.routingModeButton.textContent = options.getRoutingLabel?.(mode) ?? (mode === "bezier" ? "Routing: Bezier" : "Routing: CFC");
   };
 
   const applyTheme = (theme: UiTheme): void => {
     document.body.setAttribute("data-theme", theme);
     const isDark = theme === "dark";
-    options.themeToggleButton.textContent = isDark ? "☀️ Light" : "🌙 Dark";
+    const label = options.getThemeLabel?.(theme)
+      ?? {
+        text: isDark ? "☀️ Light" : "🌙 Dark",
+        ariaLabel: isDark ? "Light Theme aktivieren" : "Dark Theme aktivieren",
+      };
+    options.themeToggleButton.textContent = label.text;
     options.themeToggleButton.setAttribute("aria-pressed", isDark ? "true" : "false");
-    options.themeToggleButton.setAttribute("aria-label", isDark ? "Light Theme aktivieren" : "Dark Theme aktivieren");
+    options.themeToggleButton.setAttribute("aria-label", label.ariaLabel);
   };
 
   options.bulkMenuToggleButton.addEventListener("click", () => {
@@ -287,7 +297,10 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
       options.setDataText(exported);
       const elapsedMs = performance.now() - start;
       const sizeKb = getPayloadSizeKb(exported);
-      options.setMetrics(`Exportgröße: ${formatKb(sizeKb)} | Roundtrip-Zeit: ${formatMs(elapsedMs)}`);
+      options.setMetrics(
+        options.formatRoundtripMetric?.(sizeKb, elapsedMs)
+          ?? `Exportgröße: ${sizeKb.toFixed(2)} KB | Roundtrip-Zeit: ${elapsedMs.toFixed(2)} ms`,
+      );
     } catch (error) {
       return;
     }

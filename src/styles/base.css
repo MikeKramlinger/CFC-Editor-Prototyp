@@ -49,6 +49,12 @@ body {
   margin-bottom: 10px;
 }
 
+.toolbar__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .toolbar h1 {
   margin: 0;
   font-size: 18px;
