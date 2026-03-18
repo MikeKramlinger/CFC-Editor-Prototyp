@@ -548,12 +548,11 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
     ? getOpenTaskPlaceholder(viewState.task.id, viewState.task.placeholder)
     : "";
   const isOpenTask = viewState.task.kind === "open";
-  quizCheckFloatingButton.setAttribute("title", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
-  quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
-  quizDescription.textContent = `${viewState.task.title}: ${viewState.task.description}`;
-  updateExpectedPreviewToggleButton(viewState.task);
-  renderExpectedQuizGraphPreview(viewState.task);
-  quizFeedback.textContent = viewState.feedback;
+  quizCheckButton.textContent = isOpenTask ? t(currentLanguage, "quizCheckOpen") : t(currentLanguage, "quizCheckGraph");
+  quizCheckFloatingButton.setAttribute("title", isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph"));
+  quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph"));
+  quizDescription.textContent = `${localizedTitle}${t(currentLanguage, "quizTaskViewPrefixSeparator")}${localizedDescription}`;
+  quizFeedback.textContent = localizeInitialQuizFeedback(viewState.feedback, isOpenTask);
   quizTaskSelect.value = String(viewState.index);
   quizPrevButton.disabled = viewState.index <= 0;
   quizNextButton.disabled = viewState.index >= quizSession.getTasks().length - 1;
