@@ -105,7 +105,8 @@ export const createNodeElement = (model: NodeRenderModel, callbacks: NodeRenderC
     inputPort.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
       event.preventDefault();
-      callbacks.onInputPortPointerDown(node.id, portId, event.clientX, event.clientY);
+      const rect = inputPort.getBoundingClientRect();
+      callbacks.onInputPortPointerDown(node.id, portId, rect.left + rect.width / 2, rect.top + rect.height / 2);
     });
 
     inputPorts.push(inputPort);
@@ -128,7 +129,8 @@ export const createNodeElement = (model: NodeRenderModel, callbacks: NodeRenderC
     outputPort.addEventListener("pointerdown", (event) => {
       event.stopPropagation();
       event.preventDefault();
-      callbacks.onOutputPortPointerDown(node.id, portId, event.clientX, event.clientY);
+      const rect = outputPort.getBoundingClientRect();
+      callbacks.onOutputPortPointerDown(node.id, portId, rect.left + rect.width / 2, rect.top + rect.height / 2);
     });
 
     outputPorts.push(outputPort);

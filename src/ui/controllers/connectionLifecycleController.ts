@@ -29,12 +29,8 @@ export const beginConnectionDrag = (options: BeginConnectionDragOptions): Connec
     return null;
   }
 
-  const startPoint =
-    options.fromPortKind === "output"
-      ? options.getOutputPortPoint(fromNode, options.fromPort)
-      : options.getInputPortPoint(fromNode, options.fromPort);
-  const startX = options.unitToPx(startPoint.x);
-  const startY = options.unitToPx(startPoint.y);
+  const startX = options.clientToGraphPxX(options.clientX);
+  const startY = options.clientToGraphPxY(options.clientY);
 
   return createConnectionDragState(
     options.fromNodeId,

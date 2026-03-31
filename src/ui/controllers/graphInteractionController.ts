@@ -66,7 +66,26 @@ export const installGraphInteractionController = (options: GraphInteractionContr
     options.setIsPointerInsideGraph(true);
   });
 
+  options.canvas.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+  });
+
   options.canvas.addEventListener("pointerdown", (event) => {
+    if (event.button === 2) {
+      event.preventDefault();
+      options.closeNodeEditDialog();
+      const { panX, panY } = options.getPan();
+      options.setPanState({
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startPanX: panX,
+        startPanY: panY,
+        moved: false,
+      });
+      options.canvas.classList.add("is-panning");
+      return;
+    }
+
     if (event.button !== 0) {
       return;
     }
@@ -81,7 +100,7 @@ export const installGraphInteractionController = (options: GraphInteractionContr
 
     options.closeNodeEditDialog();
 
-    if (event.shiftKey && !options.getIsInteractionLocked()) {
+    if (!options.getIsInteractionLocked()) {
       options.setMarqueeSelection({
         startX: options.clientToGraphPxX(event.clientX),
         startY: options.clientToGraphPxY(event.clientY),

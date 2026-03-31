@@ -160,7 +160,9 @@ const applyTaskEditability = (): void => {
   const locked = isQuizModeActive && activeTaskCompleted;
   const canRework = locked && isOpenTask;
   dataPanelUi.dataText.readOnly = locked;
+  dataPanelUi.dataText.disabled = locked;
   dataPanelUi.dataText.setAttribute("aria-readonly", locked ? "true" : "false");
+  dataPanelUi.dataText.setAttribute("aria-disabled", locked ? "true" : "false");
   dataArea.classList.toggle("task-locked", locked);
   dataEditor.classList.toggle("is-readonly", locked);
   quizTimerInline.classList.toggle("is-completed", locked);
