@@ -13,10 +13,12 @@ import {
 import { installDataAreaResize } from "./ui/behaviors/dataAreaResize.js";
 import { createDataPanelController } from "./ui/controllers/dataPanelController.js";
 import { installKeyboardShortcutsController } from "./ui/controllers/keyboardShortcutsController.js";
+import { createParticipantNameDialogController } from "./ui/controllers/participantNameDialogController.js";
 import { createToolbarController } from "./ui/controllers/toolbarController.js";
 import { createToolboxController } from "./ui/controllers/toolboxController.js";
 import { getDataPanelUiElements } from "./ui/views/dataPanelUi.js";
 import { query } from "./ui/views/domQueryUi.js";
+import { getParticipantNameDialogUiElements } from "./ui/views/participantNameDialogUi.js";
 import { getToolbarUiElements } from "./ui/views/toolbarUi.js";
 import { getToolboxUiElements } from "./ui/views/toolboxUi.js";
 import {
@@ -35,14 +37,15 @@ const toolbarSection = query<HTMLElement>(".toolbar");
 const toolbarUi = getToolbarUiElements();
 const toolboxUi = getToolboxUiElements();
 const dataPanelUi = getDataPanelUiElements();
+const participantNameDialogUi = getParticipantNameDialogUiElements();
 const dataArea = query<HTMLElement>(".data-area");
 const dataEditor = query<HTMLDivElement>(".data-editor");
 const dataResizer = query<HTMLDivElement>("#data-resizer");
 const quizToggleButton = query<HTMLButtonElement>("#quiz-toggle");
 const quizMenu = query<HTMLDivElement>("#quiz-menu");
 const quizTaskSelect = query<HTMLSelectElement>("#quiz-task-select");
+const quizBackButton = query<HTMLButtonElement>("#quiz-back");
 const quizPrevButton = query<HTMLButtonElement>("#quiz-prev");
-const quizCheckButton = query<HTMLButtonElement>("#quiz-check");
 const quizReworkButton = query<HTMLButtonElement>("#quiz-rework");
 const quizNextButton = query<HTMLButtonElement>("#quiz-next");
 const quizEndButton = query<HTMLButtonElement>("#quiz-end");
@@ -57,6 +60,7 @@ const quizTimerToggleButton = query<HTMLButtonElement>("#quiz-timer-toggle");
 const quizTaskLocked = query<HTMLElement>("#quiz-task-locked");
 
 const THEME_STORAGE_KEY = "cfc-editor-theme";
+const QUIZ_PARTICIPANT_NAME_STORAGE_KEY = "cfc-quiz-participant-name";
 type UiTheme = "light" | "dark";
 type ShortcutContext = "graph" | "data";
 type BulkConnectionMode = "count" | "single-target" | "all-to-all";
@@ -77,6 +81,9 @@ let timerIntervalId: number | null = null;
 let activeOpenAnswerHistory: QuizTaskAnswerRevision[] = [];
 const quizSession = createQuizSession({ tasks: SAMPLE_QUIZ_TASKS });
 const quizPersistence = createQuizPersistence();
+const participantNameDialog = createParticipantNameDialogController({
+  ui: participantNameDialogUi,
+});
 
 const formatElapsed = (elapsedMs: number): string => {
   const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
@@ -167,7 +174,6 @@ const applyTaskEditability = (): void => {
   dataEditor.classList.toggle("is-readonly", locked);
   quizTimerInline.classList.toggle("is-completed", locked);
   quizTaskLocked.hidden = !locked;
-  quizCheckButton.disabled = locked;
   quizCheckFloatingButton.disabled = locked;
   quizTimerToggleButton.hidden = locked;
   quizTimerToggleButton.disabled = !isQuizModeActive || activeTaskCompleted;
@@ -252,7 +258,6 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
     ? viewState.task.placeholder ?? "Antwort hier eingeben..."
     : "";
   const isOpenTask = viewState.task.kind === "open";
-  quizCheckButton.textContent = isOpenTask ? "Antwort speichern" : "Antwort prüfen";
   quizCheckFloatingButton.setAttribute("title", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
   quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
   quizDescription.textContent = `${viewState.task.title}: ${viewState.task.description}`;
@@ -416,7 +421,6 @@ const runQuizCheck = (): void => {
   if (result.success) {
     const successMessage = "✅ Aufgabe erfüllt.";
     markCurrentTaskCompleted();
-    quizCheckButton.disabled = true;
     quizCheckFloatingButton.disabled = true;
     quizFeedback.textContent = successMessage;
     quizSession.saveActiveState(createActiveQuizTaskSessionState());
@@ -699,6 +703,19 @@ quizPrevButton.addEventListener("click", () => {
   );
 });
 
+quizBackButton.addEventListener("click", () => {
+  if (!isQuizModeActive) {
+    return;
+  }
+  const shouldAbortQuiz = window.confirm(
+    "Quiz wirklich abbrechen? Dein aktueller Quiz-Fortschritt wird verworfen.",
+  );
+  if (!shouldAbortQuiz) {
+    return;
+  }
+  setQuizModeActive(false);
+});
+
 quizTimerToggleButton.addEventListener("click", () => {
   if (!isQuizModeActive || activeTaskCompleted) {
     return;
@@ -709,10 +726,6 @@ quizTimerToggleButton.addEventListener("click", () => {
     startTaskTimer(true);
   }
   applyTaskEditability();
-});
-
-quizCheckButton.addEventListener("click", () => {
-  runQuizCheck();
 });
 
 quizCheckFloatingButton.addEventListener("click", () => {
@@ -746,19 +759,31 @@ quizNextButton.addEventListener("click", () => {
 });
 
 quizEndButton.addEventListener("click", () => {
+  void (async () => {
   pauseTaskTimer();
   if (quizSession.isActive()) {
     quizSession.saveActiveState(createActiveQuizTaskSessionState());
   }
 
   const snapshot = quizSession.getSnapshot();
+  const previousParticipantName = localStorage.getItem(QUIZ_PARTICIPANT_NAME_STORAGE_KEY) ?? "";
+  const enteredParticipantName = await participantNameDialog.requestName(previousParticipantName);
+  if (enteredParticipantName === null) {
+    return;
+  }
+  const participantName = enteredParticipantName.trim();
+  if (participantName.length > 0) {
+    localStorage.setItem(QUIZ_PARTICIPANT_NAME_STORAGE_KEY, participantName);
+  }
 
   void quizPersistence.flushSessionExport({
     tasks: quizSession.getTasks(),
     session: snapshot,
+    participantName,
   }).then(() => {
     setQuizModeActive(false);
   });
+  })();
 });
 
 canvas.addEventListener(

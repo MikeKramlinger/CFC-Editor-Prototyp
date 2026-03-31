@@ -46,6 +46,18 @@ body[data-theme="dark"] .quiz-feedback {
   color: #aeb8cc;
 }
 
+body[data-theme="dark"] .quiz-back-button {
+  background: #2d333e;
+  border-color: #59657a;
+  color: #d2d9e8;
+}
+
+body[data-theme="dark"] .quiz-back-button:hover,
+body[data-theme="dark"] .quiz-back-button:focus-visible {
+  background: #353d4b;
+  border-color: #7583a0;
+}
+
 body[data-theme="dark"] .quiz-check-floating {
   background: #2a303b;
   border-color: #4b5568;
@@ -143,6 +155,26 @@ body[data-theme="dark"] .toolbox-item.active {
   background: #2f3f61;
   color: #eef3ff;
   box-shadow: inset 0 0 0 1px rgba(126, 161, 255, 0.32);
+}
+
+body[data-theme="dark"] .cfc-participant-dialog {
+  border-color: #4b5568;
+  background: #1f232b;
+  color: #e8ebf2;
+}
+
+body[data-theme="dark"] .cfc-participant-dialog__label {
+  color: #d1d7e5;
+}
+
+body[data-theme="dark"] .cfc-participant-dialog__input {
+  border-color: #4b5568;
+  background: #2a303b;
+  color: #e8ebf2;
+}
+
+body[data-theme="dark"] .cfc-participant-dialog__hint {
+  color: #aeb8cc;
 }
 
 body[data-theme="dark"] .canvas {
