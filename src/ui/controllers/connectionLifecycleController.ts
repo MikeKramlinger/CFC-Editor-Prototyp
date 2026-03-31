@@ -67,14 +67,22 @@ interface FinishConnectionDragOptions {
 export const finishConnectionDrag = (options: FinishConnectionDragOptions): void => {
   const svgOverlays = Array.from(document.querySelectorAll<SVGSVGElement>(".canvas svg"));
   const previousPointerEvents = svgOverlays.map((svg) => svg.style.pointerEvents);
+  const hitPaths = Array.from(document.querySelectorAll<SVGPathElement>(".cfc-connection-hit"));
+  const previousHitPointerEvents = hitPaths.map((path) => path.style.pointerEvents);
   svgOverlays.forEach((svg) => {
     svg.style.pointerEvents = "none";
+  });
+  hitPaths.forEach((path) => {
+    path.style.pointerEvents = "none";
   });
 
   const dropTarget = document.elementFromPoint(options.state.currentClientX, options.state.currentClientY);
 
   svgOverlays.forEach((svg, index) => {
     svg.style.pointerEvents = previousPointerEvents[index] ?? "";
+  });
+  hitPaths.forEach((path, index) => {
+    path.style.pointerEvents = previousHitPointerEvents[index] ?? "";
   });
   const dropInputTarget = extractInputPortDropTarget(dropTarget);
   const dropOutputTarget = extractOutputPortDropTarget(dropTarget);

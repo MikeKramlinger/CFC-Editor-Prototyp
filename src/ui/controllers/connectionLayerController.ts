@@ -104,12 +104,20 @@ export const renderConnectionLayer = (options: RenderConnectionLayerOptions): vo
       options.svg.append(previewLine);
 
       const previousPointerEvents = options.svg.style.pointerEvents;
+      const hitPaths = Array.from(document.querySelectorAll<SVGPathElement>(".cfc-connection-hit"));
+      const previousHitPointerEvents = hitPaths.map((path) => path.style.pointerEvents);
+      hitPaths.forEach((path) => {
+        path.style.pointerEvents = "none";
+      });
       options.svg.style.pointerEvents = "none";
       const hoveredElement = document.elementFromPoint(
         options.connectionDrag.currentClientX,
         options.connectionDrag.currentClientY,
       );
       options.svg.style.pointerEvents = previousPointerEvents;
+      hitPaths.forEach((path, index) => {
+        path.style.pointerEvents = previousHitPointerEvents[index] ?? "";
+      });
       const isDraggingFromOutput = options.connectionDrag.fromPortKind === "output";
       const hoveredPort = (hoveredElement as HTMLElement | null)?.closest(
         isDraggingFromOutput ? ".cfc-port--input" : ".cfc-port--output",
