@@ -224,22 +224,4 @@ export const installGraphInteractionController = (options: GraphInteractionContr
     options.setDragState(null);
     options.setLastCursorUnits(null);
   });
-
-  options.canvas.addEventListener("click", (event) => {
-    if (options.getSkipNextCanvasClick()) {
-      options.setSkipNextCanvasClick(false);
-      return;
-    }
-    if (
-      event.target === options.canvas ||
-      event.target === options.graphLayer ||
-      event.target === options.contentLayer ||
-      event.target === options.svg ||
-      event.target === options.nodeLayer
-    ) {
-      if (!options.isAdditiveSelection(event)) {
-        options.clearSelection();
-      }
-    }
-  });
 };
