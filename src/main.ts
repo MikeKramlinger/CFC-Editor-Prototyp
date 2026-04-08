@@ -44,7 +44,10 @@ const dataArea = query<HTMLElement>(".data-area");
 const dataEditor = query<HTMLDivElement>(".data-editor");
 const dataResizer = query<HTMLDivElement>("#data-resizer");
 const quizToggleButton = query<HTMLButtonElement>("#quiz-toggle");
-const quizResumeButton = query<HTMLButtonElement>("#quiz-resume");
+const quizEntryOverlay = query<HTMLDivElement>("#quiz-entry-overlay");
+const quizEntryStartButton = query<HTMLButtonElement>("#quiz-entry-start");
+const quizEntryResumeButton = query<HTMLButtonElement>("#quiz-entry-resume");
+const quizEntryCloseButton = query<HTMLButtonElement>("#quiz-entry-close");
 const quizResumeFileInput = query<HTMLInputElement>("#quiz-resume-file");
 const quizMenu = query<HTMLDivElement>("#quiz-menu");
 const quizTaskSelect = query<HTMLSelectElement>("#quiz-task-select");
@@ -168,7 +171,14 @@ const canRestoreQuizFromExport = (sessionExport: QuizSessionExport): boolean => 
   return SAMPLE_QUIZ_TASKS.every((task) => importedTaskIds.has(task.id));
 };
 
+const setQuizEntryOverlayOpen = (open: boolean): void => {
+  quizEntryOverlay.hidden = !open;
+  document.body.classList.toggle("quiz-entry-open", open);
+  quizToggleButton.setAttribute("aria-expanded", open ? "true" : "false");
+};
+
 const startNewQuiz = (): void => {
+  setQuizEntryOverlayOpen(false);
   if (isQuizModeActive) {
     return;
   }
@@ -187,6 +197,7 @@ const resumeQuizFromExport = (sessionExport: QuizSessionExport): void => {
   if (!isQuizModeActive) {
     setQuizModeActive(true);
   }
+  setQuizEntryOverlayOpen(false);
   pauseTaskTimer();
 
   const restoredViewState = quizSession.restore(sessionExport.session, serializeQuizGraph);
@@ -396,7 +407,6 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
 const setQuizPanelOpen = (open: boolean): void => {
   quizMenu.hidden = !open;
   quizPanel.hidden = !open;
-  quizToggleButton.setAttribute("aria-expanded", open ? "true" : "false");
 };
 
 const setToolbarLockedState = (locked: boolean): void => {
@@ -792,11 +802,34 @@ const toolbar = createToolbarController({
 });
 
 quizToggleButton.addEventListener("click", () => {
+  if (isQuizModeActive) {
+    return;
+  }
+  setQuizEntryOverlayOpen(true);
+});
+
+quizEntryStartButton.addEventListener("click", () => {
   startNewQuiz();
 });
 
-quizResumeButton.addEventListener("click", () => {
+quizEntryResumeButton.addEventListener("click", () => {
   requestQuizResumeFile();
+});
+
+quizEntryCloseButton.addEventListener("click", () => {
+  setQuizEntryOverlayOpen(false);
+});
+
+quizEntryOverlay.addEventListener("click", (event) => {
+  if (event.target === quizEntryOverlay) {
+    setQuizEntryOverlayOpen(false);
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !quizEntryOverlay.hidden) {
+    setQuizEntryOverlayOpen(false);
+  }
 });
 
 quizResumeFileInput.addEventListener("change", () => {
