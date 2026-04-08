@@ -62,7 +62,7 @@ import {
 
 interface EditorOptions {
   onGraphChanged: (graph: CfcGraph) => void;
-  onStatus: (message: string) => void;
+  onStatus?: (message: string) => void;
 }
 
 interface GraphMutationFinalizeOptions {
@@ -307,7 +307,7 @@ export class CfcEditor {
   undo(): boolean {
     const previous = this.history.undo(this.graph);
     if (!previous) {
-      this.options.onStatus("Nichts zum Rückgängig machen.");
+      this.options.onStatus?.("Nichts zum Rückgängig machen.");
       return false;
     }
 
@@ -327,7 +327,7 @@ export class CfcEditor {
   redo(): boolean {
     const next = this.history.redo(this.graph);
     if (!next) {
-      this.options.onStatus("Nichts zum Wiederholen.");
+      this.options.onStatus?.("Nichts zum Wiederholen.");
       return false;
     }
 
@@ -381,7 +381,7 @@ export class CfcEditor {
     this.panY = clampedPan.panY;
     this.applyZoom();
     this.renderConnections();
-    this.options.onStatus(`Zoom: ${Math.round(this.zoom * 100)}%`);
+    this.options.onStatus?.(`Zoom: ${Math.round(this.zoom * 100)}%`);
     return this.zoom;
   }
 
@@ -391,7 +391,7 @@ export class CfcEditor {
     this.panY = 0;
     this.applyZoom();
     this.renderConnections();
-    this.options.onStatus("Zoom: 100%");
+    this.options.onStatus?.("Zoom: 100%");
     return this.zoom;
   }
 
@@ -532,7 +532,7 @@ export class CfcEditor {
     const selectedConnectionIds = new Set(this.selectedConnectionIds);
 
     if (selectedNodeIds.size === 0 && selectedConnectionIds.size === 0) {
-      this.options.onStatus("Keine Box ausgewählt.");
+      this.options.onStatus?.("Keine Box ausgewählt.");
       return;
     }
 
@@ -548,7 +548,7 @@ export class CfcEditor {
     this.selectedConnectionIds.clear();
     this.connectionDrag = null;
     this.finalizeGraphMutation(before, { bumpRoutingCache: true });
-    this.options.onStatus("Ausgewählte Elemente gelöscht.");
+    this.options.onStatus?.("Ausgewählte Elemente gelöscht.");
   }
 
   clearSelection(): void {
@@ -566,18 +566,18 @@ export class CfcEditor {
       return false;
     }
     if (this.selectedNodeIds.size === 0) {
-      this.options.onStatus("Keine Boxen ausgewählt zum Kopieren.");
+      this.options.onStatus?.("Keine Boxen ausgewählt zum Kopieren.");
       return false;
     }
 
     const nextClipboard = createGraphClipboard(this.graph, this.selectedNodeIds);
     if (!nextClipboard) {
-      this.options.onStatus("Keine Boxen ausgewählt zum Kopieren.");
+      this.options.onStatus?.("Keine Boxen ausgewählt zum Kopieren.");
       return false;
     }
 
     this.clipboard = nextClipboard;
-    this.options.onStatus(`${nextClipboard.nodes.length} Box(en) kopiert.`);
+    this.options.onStatus?.(`${nextClipboard.nodes.length} Box(en) kopiert.`);
     return true;
   }
 
@@ -586,7 +586,7 @@ export class CfcEditor {
       return false;
     }
     if (!this.clipboard || this.clipboard.nodes.length === 0) {
-      this.options.onStatus("Zwischenablage ist leer.");
+      this.options.onStatus?.("Zwischenablage ist leer.");
       return false;
     }
 
@@ -656,7 +656,7 @@ export class CfcEditor {
     pastedNodeIds.forEach((nodeId) => this.selectedNodeIds.add(nodeId));
 
     this.finalizeGraphMutation(before, { bumpRoutingCache: true });
-    this.options.onStatus(`${pastedNodeIds.length} Box(en) eingefügt.`);
+    this.options.onStatus?.(`${pastedNodeIds.length} Box(en) eingefügt.`);
     return true;
   }
 
@@ -1099,6 +1099,13 @@ export class CfcEditor {
     connectionId = "",
   ): SVGPathElement {
     const toRoutingObstacleNode = (node: CfcNode): CfcNode & { x: number; y: number; width: number; height: number } => {
+      if (node.type === "jump" || node.type === "label") {
+        return {
+          ...node,
+          width: node.width + 1,
+        };
+      }
+
       if (node.type !== "return") {
         return node;
       }
@@ -1217,7 +1224,7 @@ export class CfcEditor {
         this.selectedConnectionIds.add(connectionId);
       },
       onStatus: (message) => {
-        this.options.onStatus(message);
+        this.options.onStatus?.(message);
       },
     });
 
