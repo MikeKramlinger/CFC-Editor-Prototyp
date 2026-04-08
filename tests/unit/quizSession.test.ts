@@ -99,4 +99,52 @@ describe("quiz session", () => {
     expect(first.isCompleted).toBe(false);
   });
 
+  it("restores a saved snapshot for continuing later", () => {
+    const session = createQuizSession({ tasks: SAMPLE_QUIZ_TASKS });
+    const started = session.start(serializeGraph);
+
+    const resumedGraph = cloneGraph(started.graph);
+    resumedGraph.version = "resume-graph";
+
+    const openAnswer = "Meine gespeicherte Antwort";
+    const changedTask = session.selectTask(
+      3,
+      {
+        graph: resumedGraph,
+        dataText: "Zwischenstand",
+        feedback: "Zwischengespeichert",
+        elapsedMs: 400,
+        isCompleted: false,
+      },
+      serializeGraph,
+    );
+
+    session.saveActiveState({
+      graph: cloneGraph(changedTask.graph),
+      dataText: openAnswer,
+      feedback: "Gespeichert",
+      elapsedMs: 3200,
+      isCompleted: true,
+      answerHistory: [
+        {
+          timestamp: "2026-04-08T10:00:00.000Z",
+          elapsedMs: 3200,
+          answer: openAnswer,
+        },
+      ],
+    });
+
+    const snapshot = session.getSnapshot();
+
+    const restoredSession = createQuizSession({ tasks: SAMPLE_QUIZ_TASKS });
+    const restored = restoredSession.restore(snapshot, serializeGraph);
+
+    expect(restored.index).toBe(3);
+    expect(restored.dataText).toBe(openAnswer);
+    expect(restored.feedback).toBe("Gespeichert");
+    expect(restored.elapsedMs).toBe(3200);
+    expect(restored.isCompleted).toBe(true);
+    expect(restored.answerHistory?.[0]?.answer).toBe(openAnswer);
+  });
+
 });

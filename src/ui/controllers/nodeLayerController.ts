@@ -5,6 +5,7 @@ interface RenderNodeLayerOptions {
   nodeLayer: HTMLDivElement;
   nodes: CfcNode[];
   selectedNodeIds: Set<string>;
+  isInteractionLocked: boolean;
   snapPortYToInteger: boolean;
   getExecutionOrderByNodeId: (nodeId: string) => number | null;
   unitToPx: (value: number) => number;
@@ -23,6 +24,7 @@ export const renderNodeLayer = (options: RenderNodeLayerOptions): void => {
         node,
         executionOrder: options.getExecutionOrderByNodeId(node.id),
         selected: options.selectedNodeIds.has(node.id),
+        interactive: !options.isInteractionLocked,
         leftPx: options.unitToPx(node.x),
         topPx: options.unitToPx(node.y),
         widthPx: options.unitToPx(node.width),
@@ -35,14 +37,16 @@ export const renderNodeLayer = (options: RenderNodeLayerOptions): void => {
       },
     );
 
-    nodeElement.addEventListener("dblclick", (event) => {
-      event.stopPropagation();
-      options.onNodeDoubleClick(node);
-    });
+    if (!options.isInteractionLocked) {
+      nodeElement.addEventListener("dblclick", (event) => {
+        event.stopPropagation();
+        options.onNodeDoubleClick(node);
+      });
 
-    nodeElement.addEventListener("pointerdown", (event) => {
-      options.onNodePointerDown(node, event);
-    });
+      nodeElement.addEventListener("pointerdown", (event) => {
+        options.onNodePointerDown(node, event);
+      });
+    }
 
     options.nodeLayer.append(nodeElement);
   });

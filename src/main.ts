@@ -1,11 +1,13 @@
 import { CfcEditor } from "./editor.js";
 import { getNextSerialForPrefix } from "./core/editor/id.js";
 import { getAdapterById, listAdapters } from "./formats/registry.js";
-import { createQuizPersistence } from "./quiz/persistence.js";
+import { createQuizPersistence, type QuizAttemptRecord, type QuizSessionExport } from "./quiz/persistence.js";
 import { SAMPLE_QUIZ_TASKS } from "./quiz/sampleQuiz.js";
 import { createQuizSession } from "./quiz/session.js";
 import {
   isGraphQuizTask,
+  type QuizSessionSnapshot,
+  type QuizTask,
   type QuizTaskAnswerRevision,
   type QuizTaskSessionState,
   type QuizTaskViewState,
@@ -42,6 +44,8 @@ const dataArea = query<HTMLElement>(".data-area");
 const dataEditor = query<HTMLDivElement>(".data-editor");
 const dataResizer = query<HTMLDivElement>("#data-resizer");
 const quizToggleButton = query<HTMLButtonElement>("#quiz-toggle");
+const quizResumeButton = query<HTMLButtonElement>("#quiz-resume");
+const quizResumeFileInput = query<HTMLInputElement>("#quiz-resume-file");
 const quizMenu = query<HTMLDivElement>("#quiz-menu");
 const quizTaskSelect = query<HTMLSelectElement>("#quiz-task-select");
 const quizBackButton = query<HTMLButtonElement>("#quiz-back");
@@ -84,6 +88,123 @@ const quizPersistence = createQuizPersistence();
 const participantNameDialog = createParticipantNameDialogController({
   ui: participantNameDialogUi,
 });
+
+const readTextFromFile = (file: File): Promise<string> => {
+  return file.text();
+};
+
+const isQuizTaskSessionState = (value: unknown): value is QuizTaskSessionState => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const state = value as Partial<QuizTaskSessionState>;
+  return (
+    state.graph !== undefined
+    && typeof state.dataText === "string"
+    && typeof state.feedback === "string"
+    && typeof state.elapsedMs === "number"
+    && typeof state.isCompleted === "boolean"
+  );
+};
+
+const parseQuizSessionExport = (raw: string): QuizSessionExport => {
+  const parsed = JSON.parse(raw) as Partial<QuizSessionExport>;
+  if (parsed.format !== "cfc-quiz-session-v1") {
+    throw new Error("Unbekanntes Dateiformat (erwartet: cfc-quiz-session-v1).");
+  }
+
+  const tasks = Array.isArray(parsed.tasks) ? parsed.tasks.filter(Boolean) as QuizTask[] : [];
+  const taskStatesRaw = parsed.session?.taskStates;
+  const taskStates: Record<string, QuizTaskSessionState> = {};
+  if (taskStatesRaw && typeof taskStatesRaw === "object") {
+    for (const [taskId, state] of Object.entries(taskStatesRaw)) {
+      if (isQuizTaskSessionState(state)) {
+        taskStates[taskId] = state;
+      }
+    }
+  }
+
+  const activeIndexCandidate = parsed.session?.activeIndex;
+  const activeIndex = typeof activeIndexCandidate === "number" ? activeIndexCandidate : 0;
+  const attempts = Array.isArray(parsed.attempts)
+    ? parsed.attempts.filter((attempt): attempt is QuizAttemptRecord => {
+      return Boolean(
+        attempt
+        && typeof attempt === "object"
+        && typeof (attempt as Partial<QuizAttemptRecord>).timestamp === "string"
+        && typeof (attempt as Partial<QuizAttemptRecord>).taskId === "string"
+        && typeof (attempt as Partial<QuizAttemptRecord>).taskTitle === "string"
+        && typeof (attempt as Partial<QuizAttemptRecord>).taskKind === "string"
+        && typeof (attempt as Partial<QuizAttemptRecord>).question === "string"
+        && typeof (attempt as Partial<QuizAttemptRecord>).dataModelOrAnswer === "string"
+        && typeof (attempt as Partial<QuizAttemptRecord>).taskElapsedMs === "number"
+        && typeof (attempt as Partial<QuizAttemptRecord>).taskCompleted === "boolean"
+        && typeof (attempt as Partial<QuizAttemptRecord>).result === "object"
+      );
+    })
+    : [];
+
+  const participantName = parsed.participant?.name;
+
+  return {
+    format: "cfc-quiz-session-v1",
+    exportedAt: typeof parsed.exportedAt === "string" ? parsed.exportedAt : new Date().toISOString(),
+    participant: typeof participantName === "string" ? { name: participantName } : undefined,
+    tasks,
+    session: {
+      activeIndex,
+      taskStates,
+    } as QuizSessionSnapshot,
+    attempts,
+  };
+};
+
+const canRestoreQuizFromExport = (sessionExport: QuizSessionExport): boolean => {
+  const importedTaskIds = new Set(sessionExport.tasks.map((task) => task.id));
+  if (importedTaskIds.size === 0) {
+    return false;
+  }
+  return SAMPLE_QUIZ_TASKS.every((task) => importedTaskIds.has(task.id));
+};
+
+const startNewQuiz = (): void => {
+  if (isQuizModeActive) {
+    return;
+  }
+  setQuizModeActive(true);
+  stopAndResetTaskTimer();
+  quizPersistence.clearQueuedAttempts();
+  applyQuizTaskViewState(quizSession.start(serializeQuizGraph));
+};
+
+const resumeQuizFromExport = (sessionExport: QuizSessionExport): void => {
+  if (!canRestoreQuizFromExport(sessionExport)) {
+    quizFeedback.textContent = "❌ Der Report passt nicht zu den aktuellen Quiz-Aufgaben.";
+    return;
+  }
+
+  if (!isQuizModeActive) {
+    setQuizModeActive(true);
+  }
+  pauseTaskTimer();
+
+  const restoredViewState = quizSession.restore(sessionExport.session, serializeQuizGraph);
+  quizPersistence.replaceQueuedAttempts(sessionExport.attempts);
+  applyQuizTaskViewState(restoredViewState);
+
+  const participantName = sessionExport.participant?.name?.trim();
+  if (participantName) {
+    localStorage.setItem(QUIZ_PARTICIPANT_NAME_STORAGE_KEY, participantName);
+  }
+
+  quizFeedback.textContent = "📂 Quiz-Stand aus Report geladen. Du kannst direkt weiterarbeiten.";
+};
+
+const requestQuizResumeFile = (): void => {
+  quizResumeFileInput.value = "";
+  quizResumeFileInput.click();
+};
 
 const formatElapsed = (elapsedMs: number): string => {
   const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
@@ -671,13 +792,32 @@ const toolbar = createToolbarController({
 });
 
 quizToggleButton.addEventListener("click", () => {
-  if (isQuizModeActive) {
-    return;
-  }
-  setQuizModeActive(true);
-  stopAndResetTaskTimer();
-  quizPersistence.clearQueuedAttempts();
-  applyQuizTaskViewState(quizSession.start(serializeQuizGraph));
+  startNewQuiz();
+});
+
+quizResumeButton.addEventListener("click", () => {
+  requestQuizResumeFile();
+});
+
+quizResumeFileInput.addEventListener("change", () => {
+  void (async () => {
+    const file = quizResumeFileInput.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const fileText = await readTextFromFile(file);
+      const sessionExport = parseQuizSessionExport(fileText);
+      resumeQuizFromExport(sessionExport);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isQuizModeActive) {
+        quizFeedback.textContent = `❌ Report konnte nicht geladen werden: ${message}`;
+      } else {
+        window.alert(`Report konnte nicht geladen werden: ${message}`);
+      }
+    }
+  })();
 });
 
 quizTaskSelect.addEventListener("change", () => {

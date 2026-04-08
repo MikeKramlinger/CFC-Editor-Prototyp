@@ -51,6 +51,7 @@ export interface QuizSession {
   getActiveTask: () => QuizTask;
   getActiveIndex: () => number;
   start: (serializeGraph: (graph: CfcGraph) => string) => QuizTaskViewState;
+  restore: (snapshot: QuizSessionSnapshot, serializeGraph: (graph: CfcGraph) => string) => QuizTaskViewState;
   stop: () => void;
   saveActiveState: (state: QuizTaskSessionState) => void;
   getSnapshot: () => QuizSessionSnapshot;
@@ -109,6 +110,23 @@ export const createQuizSession = (options: CreateQuizSessionOptions): QuizSessio
       active = true;
       activeIndex = 0;
       stateByTaskId.clear();
+      return createViewState(serializeGraph);
+    },
+    restore: (snapshot, serializeGraph) => {
+      active = true;
+      stateByTaskId.clear();
+
+      if (snapshot && snapshot.taskStates && typeof snapshot.taskStates === "object") {
+        for (const task of tasks) {
+          const restoredTaskState = snapshot.taskStates[task.id];
+          if (!restoredTaskState) {
+            continue;
+          }
+          stateByTaskId.set(task.id, cloneTaskSessionState(restoredTaskState));
+        }
+      }
+
+      activeIndex = Math.max(0, Math.min(tasks.length - 1, snapshot.activeIndex ?? 0));
       return createViewState(serializeGraph);
     },
     stop: () => {

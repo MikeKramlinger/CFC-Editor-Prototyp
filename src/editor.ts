@@ -354,6 +354,7 @@ export class CfcEditor {
 
   setInteractionLocked(locked: boolean): void {
     this.isInteractionLocked = locked;
+    this.canvas.classList.toggle("quiz-interaction-locked", locked);
     if (!locked) {
       return;
     }
@@ -948,6 +949,7 @@ export class CfcEditor {
       nodeLayer: this.nodeLayer,
       nodes: this.graph.nodes,
       selectedNodeIds: this.selectedNodeIds,
+      isInteractionLocked: this.isInteractionLocked,
       snapPortYToInteger: this.routingMode === "astar",
       getExecutionOrderByNodeId: this.getExecutionOrderByNodeId.bind(this),
       unitToPx: this.unitToPx.bind(this),
@@ -984,6 +986,7 @@ export class CfcEditor {
       fallbackOverlaySvg: this.fallbackOverlaySvg,
       connections: this.graph.connections,
       selectedConnectionIds: this.selectedConnectionIds,
+      isInteractionLocked: this.isInteractionLocked,
       routingMode: this.routingMode,
       connectionDrag: this.connectionDrag,
       findNode: this.findNode.bind(this),

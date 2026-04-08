@@ -100,28 +100,19 @@ export const installGraphInteractionController = (options: GraphInteractionContr
 
     options.closeNodeEditDialog();
 
-    if (!options.getIsInteractionLocked()) {
-      options.setMarqueeSelection({
-        startX: options.clientToGraphPxX(event.clientX),
-        startY: options.clientToGraphPxY(event.clientY),
-        currentX: options.clientToGraphPxX(event.clientX),
-        currentY: options.clientToGraphPxY(event.clientY),
-        additive: options.isAdditiveSelection(event),
-      });
-      options.updateSelectionBox();
-      options.applyMarqueeSelection();
+    if (options.getIsInteractionLocked()) {
       return;
     }
 
-    const { panX, panY } = options.getPan();
-    options.setPanState({
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startPanX: panX,
-      startPanY: panY,
-      moved: false,
+    options.setMarqueeSelection({
+      startX: options.clientToGraphPxX(event.clientX),
+      startY: options.clientToGraphPxY(event.clientY),
+      currentX: options.clientToGraphPxX(event.clientX),
+      currentY: options.clientToGraphPxY(event.clientY),
+      additive: options.isAdditiveSelection(event),
     });
-    options.canvas.classList.add("is-panning");
+    options.updateSelectionBox();
+    options.applyMarqueeSelection();
   });
 
   options.canvas.addEventListener("pointermove", (event) => {
