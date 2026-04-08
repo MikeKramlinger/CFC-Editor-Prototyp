@@ -34,6 +34,7 @@ export interface QuizSessionExport {
 
 export interface QuizPersistence {
   queueAttempt: (options: PersistQuizAttemptOptions) => void;
+  replaceQueuedAttempts: (records: QuizAttemptRecord[]) => void;
   flushSessionExport: (options: {
     tasks: QuizTask[];
     session: QuizSessionSnapshot;
@@ -100,6 +101,10 @@ export const createQuizPersistence = (): QuizPersistence => {
   return {
     queueAttempt: ({ record }) => {
       queuedAttempts.push(record);
+    },
+    replaceQueuedAttempts: (records) => {
+      queuedAttempts.length = 0;
+      queuedAttempts.push(...records.map((record) => ({ ...record, result: { ...record.result } })));
     },
     flushSessionExport,
     clearQueuedAttempts: () => {

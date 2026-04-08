@@ -420,6 +420,12 @@ input[type="number"]:hover {
   cursor: grabbing !important;
 }
 
+.canvas.quiz-interaction-locked .cfc-node,
+.canvas.quiz-interaction-locked .cfc-port,
+.canvas.quiz-interaction-locked .cfc-connection-hit {
+  cursor: default !important;
+}
+
 .cfc-graph-layer {
   position: absolute;
   inset: 0;

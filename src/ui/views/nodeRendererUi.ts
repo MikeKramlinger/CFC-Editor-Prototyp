@@ -4,6 +4,7 @@ export interface NodeRenderModel {
   node: CfcNode;
   executionOrder: number | null;
   selected: boolean;
+  interactive: boolean;
   leftPx: number;
   topPx: number;
   widthPx: number;
@@ -17,7 +18,7 @@ export interface NodeRenderCallbacks {
 }
 
 export const createNodeElement = (model: NodeRenderModel, callbacks: NodeRenderCallbacks): HTMLDivElement => {
-  const { node, executionOrder, selected, leftPx, topPx, widthPx, heightPx, snapPortYToInteger } = model;
+  const { node, executionOrder, selected, interactive, leftPx, topPx, widthPx, heightPx, snapPortYToInteger } = model;
   const template = getNodeTemplateByType(node.type);
   const pxPerUnit = node.height > 0 ? heightPx / node.height : 24;
 
@@ -71,7 +72,8 @@ export const createNodeElement = (model: NodeRenderModel, callbacks: NodeRenderC
   const nodeElement = document.createElement("div");
   nodeElement.className = "cfc-node";
   nodeElement.dataset.nodeType = node.type;
-  nodeElement.style.pointerEvents = "auto";
+  nodeElement.style.pointerEvents = interactive ? "auto" : "none";
+  nodeElement.style.cursor = interactive ? "move" : "default";
   if (selected) {
     nodeElement.classList.add("selected");
   }
@@ -102,12 +104,14 @@ export const createNodeElement = (model: NodeRenderModel, callbacks: NodeRenderC
     inputPort.dataset.portId = portId;
     inputPort.style.top = getPortTop(portIndex, template.inputCount);
 
-    inputPort.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-      event.preventDefault();
-      const rect = inputPort.getBoundingClientRect();
-      callbacks.onInputPortPointerDown(node.id, portId, rect.left + rect.width / 2, rect.top + rect.height / 2);
-    });
+    if (interactive) {
+      inputPort.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        const rect = inputPort.getBoundingClientRect();
+        callbacks.onInputPortPointerDown(node.id, portId, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      });
+    }
 
     inputPorts.push(inputPort);
   }
@@ -126,12 +130,14 @@ export const createNodeElement = (model: NodeRenderModel, callbacks: NodeRenderC
     outputPort.dataset.portId = portId;
     outputPort.style.top = getPortTop(portIndex, template.outputCount);
 
-    outputPort.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
-      event.preventDefault();
-      const rect = outputPort.getBoundingClientRect();
-      callbacks.onOutputPortPointerDown(node.id, portId, rect.left + rect.width / 2, rect.top + rect.height / 2);
-    });
+    if (interactive) {
+      outputPort.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        const rect = outputPort.getBoundingClientRect();
+        callbacks.onOutputPortPointerDown(node.id, portId, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      });
+    }
 
     outputPorts.push(outputPort);
   }

@@ -10,6 +10,7 @@ interface RenderConnectionLayerOptions {
   fallbackOverlaySvg: SVGSVGElement;
   connections: CfcConnection[];
   selectedConnectionIds: Set<string>;
+  isInteractionLocked: boolean;
   routingMode: RoutingMode;
   connectionDrag: ConnectionDragState | null;
   findNode: (nodeId: string) => CfcNode | undefined;
@@ -65,11 +66,13 @@ export const renderConnectionLayer = (options: RenderConnectionLayerOptions): vo
     const hitPath = path.cloneNode(true) as SVGPathElement;
     hitPath.classList.add("cfc-connection-hit");
     hitPath.dataset.connectionId = connection.id;
-    hitPath.setAttribute("pointer-events", "stroke");
-    hitPath.addEventListener("click", (event) => {
-      event.stopPropagation();
-      options.onConnectionClick(connection.id, event);
-    });
+    hitPath.setAttribute("pointer-events", options.isInteractionLocked ? "none" : "stroke");
+    if (!options.isInteractionLocked) {
+      hitPath.addEventListener("click", (event) => {
+        event.stopPropagation();
+        options.onConnectionClick(connection.id, event);
+      });
+    }
 
     if (isFallback) {
       options.fallbackOverlaySvg.append(path);
