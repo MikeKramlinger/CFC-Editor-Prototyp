@@ -24,9 +24,7 @@
           <button id="export-data" type="button">Export</button>
           <button id="import-data" type="button">Import</button>
           <button id="roundtrip" type="button">Roundtrip-Test</button>
-          <button id="quiz-toggle" type="button" aria-expanded="false" aria-controls="quiz-menu">Quiz-Modus</button>
-          <button id="quiz-resume" type="button">Quiz fortsetzen</button>
-          <input id="quiz-resume-file" type="file" accept="application/json,.json" hidden />
+          <button id="quiz-toggle" type="button" aria-expanded="false" aria-controls="quiz-entry-overlay">Quiz-Modus</button>
         </div>
         <div id="quiz-menu" class="quiz-menu" hidden>
           <div class="toolbar__row">
@@ -115,16 +113,18 @@
         ></div>
         <div class="data-area__header">
           <label for="data-text">Daten</label>
-          <div id="quiz-task-nav-inline" class="quiz-task-nav-inline" hidden>
-            <button id="quiz-prev" type="button" aria-label="Vorherige Aufgabe" title="Vorherige Aufgabe">◀</button>
-            <select id="quiz-task-select" aria-label="Quiz-Aufgabe"></select>
-            <button id="quiz-next" type="button" aria-label="Nächste Aufgabe" title="Nächste Aufgabe">▶</button>
-          </div>
-          <div id="quiz-timer-inline" class="quiz-timer-inline" hidden>
-            <span><strong id="quiz-task-timer">00:00</strong></span>
-            <button id="quiz-timer-toggle" type="button">Pause</button>
-            <span id="quiz-task-locked" class="quiz-task-locked" title="Aufgabe ist abgeschlossen und gesperrt" hidden>🔒</span>
-            <button id="quiz-rework" class="quiz-rework-inline" type="button" hidden>Überarbeiten</button>
+          <div class="quiz-center-cluster">
+            <div id="quiz-task-nav-inline" class="quiz-task-nav-inline" hidden>
+              <button id="quiz-prev" type="button" aria-label="Vorherige Aufgabe" title="Vorherige Aufgabe">◀</button>
+              <select id="quiz-task-select" aria-label="Quiz-Aufgabe"></select>
+              <button id="quiz-next" type="button" aria-label="Nächste Aufgabe" title="Nächste Aufgabe">▶</button>
+            </div>
+            <div id="quiz-timer-inline" class="quiz-timer-inline" hidden>
+              <span><strong id="quiz-task-timer">00:00</strong></span>
+              <button id="quiz-timer-toggle" type="button">Pause</button>
+              <span id="quiz-task-locked" class="quiz-task-locked" title="Aufgabe ist abgeschlossen und gesperrt" hidden>🔒</span>
+              <button id="quiz-rework" class="quiz-rework-inline" type="button" hidden>Überarbeiten</button>
+            </div>
           </div>
           <button id="data-toggle" type="button" aria-expanded="false" aria-label="Datenbereich vergrößern">⤢</button>
         </div>
@@ -144,6 +144,34 @@
         <p id="metrics" class="metrics" aria-live="polite"></p>
       </section>
     </main>
+
+    <div id="quiz-entry-overlay" class="quiz-entry-overlay" hidden>
+      <section class="quiz-entry-card" role="dialog" aria-modal="true" aria-labelledby="quiz-entry-title">
+        <button
+          id="quiz-entry-close"
+          class="quiz-entry-close-button"
+          type="button"
+          aria-label="Quiz-Vorscreen schließen"
+          title="Zurück"
+        >✕</button>
+        <h2 id="quiz-entry-title">Quiz-Modus</h2>
+        <p class="quiz-entry-card__intro">Wähle, wie du mit dem Quiz starten möchtest.</p>
+        <div class="quiz-entry-rules" aria-label="Quiz-Regeln">
+          <h3>Kurze Regeln</h3>
+          <ul>
+            <li>Bearbeite jede Aufgabe in der vorgegebenen Reihenfolge oder springe gezielt per Auswahl.</li>
+            <li>Antworten können über den Pfeil-Button rechts unten im Datenfeld geprüft werden.</li>
+            <li>Die Zeit zur Beantwortung jeder Aufgabe wird gespeichert und kann gestoppt/fortgesetzt werden.</li>
+            <li>Der aktuelle Stand kann am Ende exportiert und später über "Fortsetzen" wieder geladen werden.</li>
+          </ul>
+        </div>
+        <div class="quiz-entry-actions">
+          <button id="quiz-entry-start" type="button">Quiz starten</button>
+          <button id="quiz-entry-resume" type="button">Quiz fortsetzen</button>
+        </div>
+      </section>
+      <input id="quiz-resume-file" type="file" accept="application/json,.json" hidden />
+    </div>
 
     <dialog id="participant-name-dialog" class="cfc-participant-dialog">
       <form id="participant-name-form" method="dialog" class="cfc-participant-dialog__form">
