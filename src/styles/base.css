@@ -1192,9 +1192,8 @@ body.quiz-entry-open .layout {
   inset: 0;
   z-index: 220;
   display: grid;
-  align-items: center;
-  justify-items: center;
-  padding: clamp(12px, 2.5vh, 24px);
+  place-items: center;
+  padding: 16px;
   background: rgba(20, 24, 33, 0.32);
   backdrop-filter: blur(3px);
 }
@@ -1204,6 +1203,7 @@ body.quiz-entry-open .layout {
 }
 
 .quiz-entry-card {
+  position: relative;
   width: min(680px, 100%);
   border: 1px solid #c9d0db;
   border-radius: 14px;
@@ -1215,16 +1215,10 @@ body.quiz-entry-open .layout {
   gap: 12px;
 }
 
-.quiz-entry-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
 .quiz-entry-card h2 {
   margin: 0;
   font-size: 20px;
+  padding-right: 40px;
 }
 
 .quiz-entry-card__intro {
@@ -1263,6 +1257,10 @@ body.quiz-entry-open .layout {
 }
 
 .quiz-entry-close-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
   width: 28px;
   height: 28px;
   min-width: 28px;
