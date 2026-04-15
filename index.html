@@ -33,6 +33,15 @@
           </div>
           <div id="quiz-panel" class="quiz-panel">
             <p id="quiz-description" class="quiz-description"></p>
+            <button
+              id="quiz-expected-toggle"
+              class="quiz-expected-toggle"
+              type="button"
+              title="Soll-Vorschau anzeigen"
+              hidden
+            >
+              👁
+            </button>
             <p id="quiz-feedback" class="quiz-feedback" aria-live="polite"></p>
           </div>
         </div>
@@ -92,12 +101,30 @@
             </div>
             <div id="toolbox-list" class="toolbox-list"></div>
           </aside>
-          <div id="canvas" class="canvas" aria-label="CFC Arbeitsbereich">
-            <div class="graph-zoom-overlay" aria-label="Zoom-Steuerung">
-              <button id="zoom-out" type="button">-</button>
-              <span id="zoom-value" class="zoom-value">100%</span>
-              <button id="zoom-in" type="button">+</button>
+          <div id="graph-stage" class="graph-stage">
+            <div id="canvas" class="canvas" aria-label="CFC Arbeitsbereich">
+              <div class="graph-zoom-overlay" aria-label="Zoom-Steuerung">
+                <button id="zoom-out" type="button">-</button>
+                <span id="zoom-value" class="zoom-value">100%</span>
+                <button id="zoom-in" type="button">+</button>
+              </div>
             </div>
+            <div
+              id="quiz-preview-resizer"
+              class="quiz-preview-resizer"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Breite der Soll-Vorschau anpassen"
+              hidden
+            ></div>
+            <aside id="quiz-expected-preview" class="quiz-expected-preview" hidden>
+              <p class="quiz-expected-preview__label">Vorschau</p>
+              <div id="quiz-expected-canvas" class="quiz-expected-canvas" aria-label="Erwarteter Graph als Vorschau">
+                <div id="quiz-expected-zoom-overlay" class="quiz-expected-zoom-overlay" aria-label="Vorschau-Zoom">
+                  <span id="quiz-expected-zoom-value" class="quiz-expected-zoom-value">75%</span>
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
       </section>

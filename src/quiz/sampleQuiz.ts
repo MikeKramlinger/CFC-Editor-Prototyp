@@ -29,6 +29,36 @@ const baseGraph: CfcGraph = {
   connections: [],
 };
 
+const expectedTaskAddBoxPositionGraph: CfcGraph = {
+  version: "1.0",
+  nodes: [
+    createNode("N1", "input", 2, 4, "In"),
+    createNode("N2", "output", 28, 4, "Out"),
+    createNode("N3", "box", 12, 8, "Box 3"),
+  ],
+  connections: [],
+};
+
+const expectedTaskConnectInputBoxGraph: CfcGraph = {
+  version: "1.0",
+  nodes: [
+    createNode("N1", "input", 2, 4, "In"),
+    createNode("N2", "output", 28, 4, "Out"),
+    createNode("N3", "box", 12, 4, "Step"),
+  ],
+  connections: [
+    {
+      id: "C1",
+      fromNodeId: "N1",
+      fromPort: "output:0",
+      toNodeId: "N3",
+      toPort: "input:0",
+    },
+  ],
+};
+
+const expectedTaskCleanGraph: CfcGraph = createEmptyGraph();
+
 export const SAMPLE_QUIZ_TASKS: QuizTask[] = [
   {
     id: "task-add-box-position",
@@ -36,6 +66,7 @@ export const SAMPLE_QUIZ_TASKS: QuizTask[] = [
     title: "Box an Position",
     description: "Füge eine neue Box an Position x=12, y=8 ein.",
     initialGraph: cloneGraph(baseGraph),
+    expectedGraph: cloneGraph(expectedTaskAddBoxPositionGraph),
     criteria: {
       minNodeCount: 3,
       requiredNodes: [{ type: "box", x: 12, y: 8 }],
@@ -47,6 +78,7 @@ export const SAMPLE_QUIZ_TASKS: QuizTask[] = [
     title: "Input verbinden",
     description: "Füge eine Box mit Label 'Step' ein und verbinde Input -> Box.",
     initialGraph: cloneGraph(baseGraph),
+    expectedGraph: cloneGraph(expectedTaskConnectInputBoxGraph),
     criteria: {
       requiredNodes: [{ type: "box", label: "Step" }],
       requiredConnections: [
@@ -63,6 +95,7 @@ export const SAMPLE_QUIZ_TASKS: QuizTask[] = [
     title: "Leerer Graph",
     description: "Lösche alle Nodes und Verbindungen und importiere den leeren Graphen.",
     initialGraph: cloneGraph(baseGraph),
+    expectedGraph: cloneGraph(expectedTaskCleanGraph),
     criteria: {
       exactNodeCount: 0,
       exactConnectionCount: 0,
