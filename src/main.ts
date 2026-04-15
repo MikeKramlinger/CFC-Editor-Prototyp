@@ -71,6 +71,9 @@ const quizExpectedToggleButton = query<HTMLButtonElement>("#quiz-expected-toggle
 const quizPreviewResizer = query<HTMLDivElement>("#quiz-preview-resizer");
 const quizExpectedPreview = query<HTMLDivElement>("#quiz-expected-preview");
 const quizExpectedCanvas = query<HTMLDivElement>("#quiz-expected-canvas");
+const quizExpectedPreviewLabel = query<HTMLParagraphElement>("#quiz-expected-preview-label");
+const quizExpectedZoomOutButton = query<HTMLButtonElement>("#quiz-expected-zoom-out");
+const quizExpectedZoomInButton = query<HTMLButtonElement>("#quiz-expected-zoom-in");
 const quizExpectedZoomValue = query<HTMLSpanElement>("#quiz-expected-zoom-value");
 const quizFeedback = query<HTMLParagraphElement>("#quiz-feedback");
 const quizCheckFloatingButton = query<HTMLButtonElement>("#quiz-check-floating");
@@ -452,6 +455,20 @@ const getDefaultExpectedPreviewWidth = (): number => {
 
 const updateExpectedPreviewZoomLabel = (): void => {
   quizExpectedZoomValue.textContent = `${Math.round(quizExpectedPreviewEditor.getZoom() * 100)}%`;
+};
+
+const applyExpectedPreviewZoomDelta = (delta: number, clientX?: number, clientY?: number): void => {
+  if (!isQuizModeActive || !quizExpectedPreviewVisible || quizExpectedPreview.hidden) {
+    return;
+  }
+
+  if (typeof clientX === "number" && typeof clientY === "number") {
+    quizExpectedPreviewEditor.zoomAtClient(delta, clientX, clientY);
+  } else {
+    quizExpectedPreviewEditor.adjustZoom(delta);
+  }
+
+  updateExpectedPreviewZoomLabel();
 };
 
 const applyExpectedPreviewLayout = (visible: boolean): void => {
@@ -1257,17 +1274,20 @@ quizPreviewResizer.addEventListener("pointercancel", endQuizPreviewResize);
 quizExpectedCanvas.addEventListener(
   "wheel",
   (event: WheelEvent) => {
-    if (!isQuizModeActive || !quizExpectedPreviewVisible || quizExpectedPreview.hidden) {
-      return;
-    }
-
     event.preventDefault();
     const delta = event.deltaY < 0 ? 0.1 : -0.1;
-    quizExpectedPreviewEditor.zoomAtClient(delta, event.clientX, event.clientY);
-    updateExpectedPreviewZoomLabel();
+    applyExpectedPreviewZoomDelta(delta, event.clientX, event.clientY);
   },
   { passive: false },
 );
+
+quizExpectedZoomOutButton.addEventListener("click", () => {
+  applyExpectedPreviewZoomDelta(-0.1);
+});
+
+quizExpectedZoomInButton.addEventListener("click", () => {
+  applyExpectedPreviewZoomDelta(0.1);
+});
 
 quizReworkButton.addEventListener("click", () => {
   if (!isQuizModeActive || !quizSession.isActive() || !activeTaskCompleted) {

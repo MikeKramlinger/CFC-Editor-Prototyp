@@ -267,27 +267,36 @@ body {
 }
 
 .zoom-value {
-  min-width: 52px;
+  min-width: 56px;
   text-align: center;
   font-weight: 600;
 }
 
 .graph-zoom-overlay {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 12px;
+  right: 12px;
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px;
+  gap: 1px;
+  padding: 5px;
   border: 1px solid #d4d7dd;
-  border-radius: 8px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.94);
 }
 
 .graph-zoom-overlay .zoom-value {
-  min-width: 48px;
+  min-width: 44px;
+  font-size: 14px;
+}
+
+.graph-zoom-overlay button {
+  min-width: 20px;
+  min-height: 20px;
+  padding: 5px 10px;
+  font-size: 14px;
+  line-height: 1;
 }
 
 button,
@@ -1167,6 +1176,7 @@ textarea {
   min-width: 34px;
   border-radius: 999px;
   padding: 0;
+  padding-bottom: 1px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1229,30 +1239,43 @@ textarea {
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
   padding: 0;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1;
   background: #f7f9fc;
+  border-color: #b9bfca;
   color: #3f4756;
   overflow: hidden;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
 .quiz-expected-toggle::after {
   content: "";
   position: absolute;
-  width: 16px;
+  width: 18px;
   height: 2px;
   background: transparent;
   border-radius: 999px;
   transform: rotate(-35deg);
+}
+
+.quiz-expected-toggle:hover,
+.quiz-expected-toggle:focus-visible {
+  background: #edf2f8;
+  border-color: #98a4b8;
+}
+
+.quiz-expected-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(94, 126, 197, 0.22);
 }
 
 .quiz-expected-toggle.is-active {
@@ -1284,10 +1307,17 @@ textarea {
   left: 10px;
   z-index: 30;
   margin: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
   font-size: 12px;
-  font-weight: 600;
-  color: #4b5362;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #1f3f91;
+  background: rgba(234, 240, 255, 0.88);
+  border: 1px solid rgba(152, 174, 232, 0.75);
   pointer-events: none;
+  transition: opacity 120ms ease;
 }
 
 .quiz-expected-canvas {
@@ -1299,27 +1329,8 @@ textarea {
   overflow: hidden;
 }
 
-.quiz-expected-zoom-overlay {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+.quiz-expected-canvas .graph-zoom-overlay {
   z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border: 1px solid #d4d7dd;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.94);
-  pointer-events: none;
-}
-
-.quiz-expected-zoom-value {
-  min-width: 40px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: #4b5362;
 }
 
 .quiz-feedback {

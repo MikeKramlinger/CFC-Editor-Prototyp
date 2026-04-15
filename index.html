@@ -118,10 +118,12 @@
               hidden
             ></div>
             <aside id="quiz-expected-preview" class="quiz-expected-preview" hidden>
-              <p class="quiz-expected-preview__label">Vorschau</p>
+              <p id="quiz-expected-preview-label" class="quiz-expected-preview__label">Vorschau</p>
               <div id="quiz-expected-canvas" class="quiz-expected-canvas" aria-label="Erwarteter Graph als Vorschau">
-                <div id="quiz-expected-zoom-overlay" class="quiz-expected-zoom-overlay" aria-label="Vorschau-Zoom">
-                  <span id="quiz-expected-zoom-value" class="quiz-expected-zoom-value">75%</span>
+                <div id="quiz-expected-zoom-overlay" class="graph-zoom-overlay" aria-label="Vorschau-Zoom">
+                  <button id="quiz-expected-zoom-out" type="button">-</button>
+                  <span id="quiz-expected-zoom-value" class="zoom-value">100%</span>
+                  <button id="quiz-expected-zoom-in" type="button">+</button>
                 </div>
               </div>
             </aside>
