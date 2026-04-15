@@ -74,6 +74,7 @@ type RoutingMode = "bezier" | "astar";
 const GRID_UNIT_SIZE = 1;
 const GRID_CELL_PX = 24;
 const GRID_SIZE = 1;
+const JUMP_INPUT_PORT_CENTER_OFFSET_PX = 5;
 const BEND_PENALTY = 25;
 const SEARCH_MARGIN = 12;
 
@@ -888,7 +889,13 @@ export class CfcEditor {
   private getInputPortPoint(node: CfcNode, portId: string): { x: number; y: number } {
     const template = getNodeTemplateByType(node.type);
     const portIndex = this.getPortIndex(portId, "input");
-    const inputX = node.type === "return" ? node.x - node.height / 2 : node.x;
+    let inputX = node.x;
+    if (node.type === "return") {
+      inputX = node.x - node.height / 2;
+    } else if (node.type === "jump") {
+      // Align with the visual center of the arrow-shaped input port.
+      inputX = node.x - JUMP_INPUT_PORT_CENTER_OFFSET_PX / GRID_CELL_PX;
+    }
     return {
       x: inputX,
       y: this.getPortCenterY(node, portIndex, template.inputCount),
@@ -1120,9 +1127,10 @@ export class CfcEditor {
     const startPort = this.getOutputPortPoint(fromNode, fromPortId);
     const endPort = this.getInputPortPoint(toNode, toPortId);
     const start = { x: Math.ceil(startPort.x), y: this.getAStarPortY(fromNode, fromPortId, "output") };
-    const end = { x: Math.floor(endPort.x), y: this.getAStarPortY(toNode, toPortId, "input") };
+    const end = { x: endPort.x, y: this.getAStarPortY(toNode, toPortId, "input") };
     const startRight = { x: start.x + 1, y: start.y };
-    const endLeft = { x: end.x - 1, y: end.y };
+    const endRouteX = Math.ceil(end.x);
+    const endLeft = { x: endRouteX - 1, y: end.y };
 
     const cacheKey = connectionId || `${fromNode.id}|${fromPortId}|${toNode.id}|${toPortId}`;
     const cached = this.astarRouteCache.get(cacheKey);
