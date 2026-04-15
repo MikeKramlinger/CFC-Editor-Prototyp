@@ -2,6 +2,7 @@ import type { ParticipantNameDialogUiElements } from "../views/participantNameDi
 
 interface ParticipantNameDialogControllerOptions {
   ui: ParticipantNameDialogUiElements;
+  getFallbackPromptText?: () => string;
 }
 
 export interface ParticipantNameDialogController {
@@ -41,7 +42,8 @@ export const createParticipantNameDialogController = (
 
   const requestName = (initialValue: string): Promise<string | null> => {
     if (typeof HTMLDialogElement === "undefined") {
-      const fallback = window.prompt("Quiz-Export: Name der teilnehmenden Person (optional)", initialValue);
+      const fallbackPromptText = options.getFallbackPromptText?.() ?? "Quiz-Export: Name der teilnehmenden Person (optional)";
+      const fallback = window.prompt(fallbackPromptText, initialValue);
       return Promise.resolve(fallback === null ? null : fallback.trim());
     }
 

@@ -108,11 +108,12 @@ let quizExpectedPreviewWidthPx = 0;
 let quizPreviewResizePointerId: number | null = null;
 let quizPreviewResizeStartX = 0;
 let quizPreviewResizeStartWidth = 0;
-let currentLanguage: UiLanguage = "de";
+let currentLanguage: UiLanguage = "en";
 const quizSession = createQuizSession({ tasks: SAMPLE_QUIZ_TASKS });
 const quizPersistence = createQuizPersistence();
 const participantNameDialog = createParticipantNameDialogController({
   ui: participantNameDialogUi,
+  getFallbackPromptText: () => t(currentLanguage, "participantDialogPromptFallback"),
 });
 
 const readTextFromFile = (file: File): Promise<string> => {
@@ -137,7 +138,7 @@ const isQuizTaskSessionState = (value: unknown): value is QuizTaskSessionState =
 const parseQuizSessionExport = (raw: string): QuizSessionExport => {
   const parsed = JSON.parse(raw) as Partial<QuizSessionExport>;
   if (parsed.format !== "cfc-quiz-session-v1") {
-    throw new Error("Unbekanntes Dateiformat (erwartet: cfc-quiz-session-v1).");
+    throw new Error(t(currentLanguage, "quizReportFormatUnknown"));
   }
 
   const tasks = Array.isArray(parsed.tasks) ? parsed.tasks.filter(Boolean) as QuizTask[] : [];
@@ -213,7 +214,7 @@ const startNewQuiz = (): void => {
 
 const resumeQuizFromExport = (sessionExport: QuizSessionExport): void => {
   if (!canRestoreQuizFromExport(sessionExport)) {
-    quizFeedback.textContent = "❌ Der Report passt nicht zu den aktuellen Quiz-Aufgaben.";
+    quizFeedback.textContent = t(currentLanguage, "quizReportMismatch");
     return;
   }
 
@@ -232,7 +233,7 @@ const resumeQuizFromExport = (sessionExport: QuizSessionExport): void => {
     localStorage.setItem(QUIZ_PARTICIPANT_NAME_STORAGE_KEY, participantName);
   }
 
-  quizFeedback.textContent = "📂 Quiz-Stand aus Report geladen. Du kannst direkt weiterarbeiten.";
+  quizFeedback.textContent = t(currentLanguage, "quizReportLoaded");
 };
 
 const requestQuizResumeFile = (): void => {
@@ -433,7 +434,9 @@ const updateExpectedPreviewToggleButton = (task: QuizTask): void => {
     return;
   }
 
-  const actionLabel = quizExpectedPreviewVisible ? "Soll-Vorschau ausblenden" : "Soll-Vorschau anzeigen";
+  const actionLabel = quizExpectedPreviewVisible
+    ? t(currentLanguage, "quizExpectedPreviewHide")
+    : t(currentLanguage, "quizExpectedPreviewShow");
   quizExpectedToggleButton.title = actionLabel;
   quizExpectedToggleButton.setAttribute("aria-label", actionLabel);
   quizExpectedToggleButton.setAttribute("aria-pressed", quizExpectedPreviewVisible ? "true" : "false");
@@ -548,11 +551,11 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
     ? getOpenTaskPlaceholder(viewState.task.id, viewState.task.placeholder)
     : "";
   const isOpenTask = viewState.task.kind === "open";
-  quizCheckButton.textContent = isOpenTask ? t(currentLanguage, "quizCheckOpen") : t(currentLanguage, "quizCheckGraph");
   quizCheckFloatingButton.setAttribute("title", isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph"));
   quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph"));
   quizDescription.textContent = `${localizedTitle}${t(currentLanguage, "quizTaskViewPrefixSeparator")}${localizedDescription}`;
   quizFeedback.textContent = localizeInitialQuizFeedback(viewState.feedback, isOpenTask);
+  updateExpectedPreviewToggleButton(viewState.task);
   quizTaskSelect.value = String(viewState.index);
   quizPrevButton.disabled = viewState.index <= 0;
   quizNextButton.disabled = viewState.index >= quizSession.getTasks().length - 1;
@@ -745,15 +748,26 @@ const getInitialTheme = (): UiTheme => {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 };
 
-const getInitialLanguage = (): UiLanguage => getStoredLanguage() ?? "de";
+const getInitialLanguage = (): UiLanguage => getStoredLanguage() ?? "en";
 
-const applyLanguageToStaticUi = (): void => {
-  document.documentElement.lang = currentLanguage;
-
-  const appTitle = document.querySelector<HTMLHeadingElement>(".toolbar__header h1");
-  if (appTitle) {
-    appTitle.textContent = t(currentLanguage, "appTitle");
+const setTextBySelector = (selector: string, text: string): void => {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element) {
+    element.textContent = text;
   }
+};
+
+const setAttributeBySelector = (selector: string, name: string, value: string): void => {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element) {
+    element.setAttribute(name, value);
+  }
+};
+
+const applyLanguageHeaderAndToolbar = (): void => {
+  document.documentElement.lang = currentLanguage;
+  document.title = t(currentLanguage, "appTitle");
+  setTextBySelector(".toolbar__header h1", t(currentLanguage, "appTitle"));
 
   languageToggleButton.textContent = currentLanguage === "de" ? "EN" : "DE";
   const languageAria = currentLanguage === "de"
@@ -763,28 +777,20 @@ const applyLanguageToStaticUi = (): void => {
   languageToggleButton.setAttribute("title", languageAria);
 
   toolbarUi.bulkMenuToggleButton.textContent = t(currentLanguage, "bulkMenuToggle");
-  const formatLabel = document.querySelector<HTMLLabelElement>('label[for="format-select"]');
-  if (formatLabel) {
-    formatLabel.textContent = t(currentLanguage, "formatLabel");
-  }
+  setTextBySelector('label[for="format-select"]', t(currentLanguage, "formatLabel"));
   toolbarUi.exportButton.textContent = t(currentLanguage, "export");
   toolbarUi.importButton.textContent = t(currentLanguage, "import");
   toolbarUi.roundtripButton.textContent = t(currentLanguage, "roundtrip");
   quizToggleButton.textContent = t(currentLanguage, "quizMode");
   quizEndButton.textContent = t(currentLanguage, "quizEnd");
+  quizBackButton.setAttribute("aria-label", t(currentLanguage, "quizBackTitle"));
+  quizBackButton.setAttribute("title", t(currentLanguage, "quizBackTitle"));
+};
 
-  const bulkBoxCountLabel = document.querySelector<HTMLLabelElement>('label[for="bulk-box-count"]');
-  if (bulkBoxCountLabel) {
-    bulkBoxCountLabel.textContent = t(currentLanguage, "bulkBoxCountLabel");
-  }
-  const bulkConnectionCountLabel = document.querySelector<HTMLLabelElement>('label[for="bulk-connection-count"]');
-  if (bulkConnectionCountLabel) {
-    bulkConnectionCountLabel.textContent = t(currentLanguage, "bulkConnectionCountLabel");
-  }
-  const bulkLegend = document.querySelector<HTMLLegendElement>("#bulk-connection-mode-group legend");
-  if (bulkLegend) {
-    bulkLegend.textContent = t(currentLanguage, "bulkConnectionModeLegend");
-  }
+const applyLanguageBulkMenu = (): void => {
+  setTextBySelector('label[for="bulk-box-count"]', t(currentLanguage, "bulkBoxCountLabel"));
+  setTextBySelector('label[for="bulk-connection-count"]', t(currentLanguage, "bulkConnectionCountLabel"));
+  setTextBySelector("#bulk-connection-mode-group legend", t(currentLanguage, "bulkConnectionModeLegend"));
 
   const bulkOptionTitles = Array.from(document.querySelectorAll<HTMLElement>(".bulk-connection-mode__title"));
   const bulkOptionDescs = Array.from(document.querySelectorAll<HTMLElement>(".bulk-connection-mode__desc"));
@@ -807,35 +813,30 @@ const applyLanguageToStaticUi = (): void => {
     bulkOptionDescs[2].textContent = t(currentLanguage, "bulkConnectionModeAllToAllDesc");
   }
 
-  const bulkAdvanced = document.querySelector<HTMLElement>(".bulk-menu__advanced");
-  bulkAdvanced?.setAttribute("aria-label", t(currentLanguage, "bulkAdvancedAriaLabel"));
-  const bulkTypeSummary = document.querySelector<HTMLElement>("#bulk-type-details summary");
-  if (bulkTypeSummary) {
-    bulkTypeSummary.textContent = t(currentLanguage, "bulkTypeSummary");
-  }
-  const bulkTypeHint = document.querySelector<HTMLElement>(".bulk-type-details__hint");
-  if (bulkTypeHint) {
-    bulkTypeHint.textContent = t(currentLanguage, "bulkTypeHint");
-  }
+  setAttributeBySelector(".bulk-menu__advanced", "aria-label", t(currentLanguage, "bulkAdvancedAriaLabel"));
+  setTextBySelector("#bulk-type-details summary", t(currentLanguage, "bulkTypeSummary"));
+  setTextBySelector(".bulk-type-details__hint", t(currentLanguage, "bulkTypeHint"));
   toolbarUi.bulkTypeResetButton.setAttribute("aria-label", t(currentLanguage, "bulkTypeResetAria"));
   toolbarUi.bulkTypeResetButton.setAttribute("title", t(currentLanguage, "bulkTypeResetAria"));
   toolbarUi.bulkCreateButton.textContent = t(currentLanguage, "bulkCreate");
+};
 
-  const toolboxTitle = document.querySelector<HTMLElement>(".toolbox h2");
-  if (toolboxTitle) {
-    toolboxTitle.textContent = t(currentLanguage, "toolboxTitle");
-  }
-  const toolbox = document.querySelector<HTMLElement>(".toolbox");
-  toolbox?.setAttribute("aria-label", t(currentLanguage, "toolboxAriaLabel"));
+const applyLanguageWorkspaceAndDataArea = (): void => {
+  setTextBySelector(".toolbox h2", t(currentLanguage, "toolboxTitle"));
+  setAttributeBySelector(".toolbox", "aria-label", t(currentLanguage, "toolboxAriaLabel"));
   canvas.setAttribute("aria-label", t(currentLanguage, "canvasAriaLabel"));
+  setAttributeBySelector("#canvas .graph-zoom-overlay", "aria-label", t(currentLanguage, "zoomOverlayAriaLabel"));
+  quizPreviewResizer.setAttribute("aria-label", t(currentLanguage, "quizPreviewResizerAria"));
+  quizExpectedPreviewLabel.textContent = t(currentLanguage, "quizExpectedPreviewLabel");
+  quizExpectedCanvas.setAttribute("aria-label", t(currentLanguage, "quizExpectedCanvasAria"));
+  setAttributeBySelector("#quiz-expected-zoom-overlay", "aria-label", t(currentLanguage, "quizExpectedZoomAria"));
 
   dataResizer.setAttribute("aria-label", t(currentLanguage, "dataResizerAriaLabel"));
   dataResizer.setAttribute("title", t(currentLanguage, "dataResizerTitle"));
-  const dataLabel = document.querySelector<HTMLLabelElement>('label[for="data-text"]');
-  if (dataLabel) {
-    dataLabel.textContent = t(currentLanguage, "dataLabel");
-  }
+  setTextBySelector('label[for="data-text"]', t(currentLanguage, "dataLabel"));
+};
 
+const applyLanguageQuizNavigationAndActions = (): void => {
   quizPrevButton.setAttribute("aria-label", t(currentLanguage, "quizTogglePrevTitle"));
   quizPrevButton.setAttribute("title", t(currentLanguage, "quizTogglePrevTitle"));
   quizNextButton.setAttribute("aria-label", t(currentLanguage, "quizToggleNextTitle"));
@@ -846,15 +847,57 @@ const applyLanguageToStaticUi = (): void => {
 
   const activeTask = quizSession.isActive() ? quizSession.getActiveTask() : null;
   const isOpenTask = activeTask !== null && !isGraphQuizTask(activeTask);
-  quizCheckButton.textContent = isOpenTask ? t(currentLanguage, "quizCheckOpen") : t(currentLanguage, "quizCheckGraph");
-  quizCheckFloatingButton.setAttribute(
-    "title",
-    isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph"),
-  );
-  quizCheckFloatingButton.setAttribute(
-    "aria-label",
-    isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph"),
-  );
+  const floatingActionLabel = isOpenTask
+    ? t(currentLanguage, "quizFloatingCheckTitleOpen")
+    : t(currentLanguage, "quizFloatingCheckTitleGraph");
+  quizCheckFloatingButton.setAttribute("title", floatingActionLabel);
+  quizCheckFloatingButton.setAttribute("aria-label", floatingActionLabel);
+  if (activeTask) {
+    updateExpectedPreviewToggleButton(activeTask);
+  }
+};
+
+const applyLanguageQuizEntryOverlay = (): void => {
+  quizEntryCloseButton.setAttribute("aria-label", t(currentLanguage, "quizEntryCloseAria"));
+  quizEntryCloseButton.setAttribute("title", t(currentLanguage, "quizEntryCloseTitle"));
+  setTextBySelector("#quiz-entry-title", t(currentLanguage, "quizEntryTitle"));
+  setTextBySelector(".quiz-entry-card__intro", t(currentLanguage, "quizEntryIntro"));
+  setAttributeBySelector(".quiz-entry-rules", "aria-label", t(currentLanguage, "quizEntryRulesAria"));
+  setTextBySelector(".quiz-entry-rules h3", t(currentLanguage, "quizEntryRulesTitle"));
+
+  const quizEntryRuleItems = Array.from(document.querySelectorAll<HTMLElement>(".quiz-entry-rules li"));
+  if (quizEntryRuleItems[0]) {
+    quizEntryRuleItems[0].textContent = t(currentLanguage, "quizEntryRuleOrder");
+  }
+  if (quizEntryRuleItems[1]) {
+    quizEntryRuleItems[1].textContent = t(currentLanguage, "quizEntryRuleCheck");
+  }
+  if (quizEntryRuleItems[2]) {
+    quizEntryRuleItems[2].textContent = t(currentLanguage, "quizEntryRuleTimer");
+  }
+  if (quizEntryRuleItems[3]) {
+    quizEntryRuleItems[3].textContent = t(currentLanguage, "quizEntryRuleExport");
+  }
+
+  quizEntryStartButton.textContent = t(currentLanguage, "quizEntryStart");
+  quizEntryResumeButton.textContent = t(currentLanguage, "quizEntryResume");
+};
+
+const applyLanguageParticipantDialog = (): void => {
+  setTextBySelector(".cfc-participant-dialog__title", t(currentLanguage, "participantDialogTitle"));
+  setTextBySelector('label[for="participant-name-input"]', t(currentLanguage, "participantDialogNameLabel"));
+  participantNameDialogUi.input.setAttribute("placeholder", t(currentLanguage, "participantDialogNamePlaceholder"));
+  participantNameDialogUi.cancelButton.textContent = t(currentLanguage, "participantDialogCancel");
+  setTextBySelector("#participant-name-submit", t(currentLanguage, "participantDialogSubmit"));
+};
+
+const applyLanguageToStaticUi = (): void => {
+  applyLanguageHeaderAndToolbar();
+  applyLanguageBulkMenu();
+  applyLanguageWorkspaceAndDataArea();
+  applyLanguageQuizNavigationAndActions();
+  applyLanguageQuizEntryOverlay();
+  applyLanguageParticipantDialog();
 
   renderQuizTaskOptions();
 };
@@ -1161,10 +1204,11 @@ quizResumeFileInput.addEventListener("change", () => {
       resumeQuizFromExport(sessionExport);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const loadFailedMessage = `${t(currentLanguage, "quizReportLoadFailedPrefix")}${message}`;
       if (isQuizModeActive) {
-        quizFeedback.textContent = `❌ Report konnte nicht geladen werden: ${message}`;
+        quizFeedback.textContent = loadFailedMessage;
       } else {
-        window.alert(`Report konnte nicht geladen werden: ${message}`);
+        window.alert(loadFailedMessage);
       }
     }
   })();
@@ -1197,9 +1241,7 @@ quizBackButton.addEventListener("click", () => {
   if (!isQuizModeActive) {
     return;
   }
-  const shouldAbortQuiz = window.confirm(
-    "Quiz wirklich abbrechen? Dein aktueller Quiz-Fortschritt wird verworfen.",
-  );
+  const shouldAbortQuiz = window.confirm(t(currentLanguage, "quizAbortConfirm"));
   if (!shouldAbortQuiz) {
     return;
   }
