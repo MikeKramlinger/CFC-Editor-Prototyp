@@ -35,6 +35,7 @@ import {
 } from "./model.js";
 
 const canvas = query<HTMLDivElement>("#canvas");
+const graphStage = query<HTMLDivElement>("#graph-stage");
 const toolbarSection = query<HTMLElement>(".toolbar");
 const toolbarUi = getToolbarUiElements();
 const toolboxUi = getToolboxUiElements();
@@ -58,6 +59,11 @@ const quizNextButton = query<HTMLButtonElement>("#quiz-next");
 const quizEndButton = query<HTMLButtonElement>("#quiz-end");
 const quizPanel = query<HTMLDivElement>("#quiz-panel");
 const quizDescription = query<HTMLParagraphElement>("#quiz-description");
+const quizExpectedToggleButton = query<HTMLButtonElement>("#quiz-expected-toggle");
+const quizPreviewResizer = query<HTMLDivElement>("#quiz-preview-resizer");
+const quizExpectedPreview = query<HTMLDivElement>("#quiz-expected-preview");
+const quizExpectedCanvas = query<HTMLDivElement>("#quiz-expected-canvas");
+const quizExpectedZoomValue = query<HTMLSpanElement>("#quiz-expected-zoom-value");
 const quizFeedback = query<HTMLParagraphElement>("#quiz-feedback");
 const quizCheckFloatingButton = query<HTMLButtonElement>("#quiz-check-floating");
 const quizTaskNavInline = query<HTMLDivElement>("#quiz-task-nav-inline");
@@ -86,6 +92,11 @@ let taskTimerRunning = false;
 let taskTimerStartedAtMs: number | null = null;
 let timerIntervalId: number | null = null;
 let activeOpenAnswerHistory: QuizTaskAnswerRevision[] = [];
+let quizExpectedPreviewVisible = false;
+let quizExpectedPreviewWidthPx = 0;
+let quizPreviewResizePointerId: number | null = null;
+let quizPreviewResizeStartX = 0;
+let quizPreviewResizeStartWidth = 0;
 const quizSession = createQuizSession({ tasks: SAMPLE_QUIZ_TASKS });
 const quizPersistence = createQuizPersistence();
 const participantNameDialog = createParticipantNameDialogController({
@@ -367,6 +378,84 @@ const editor = new CfcEditor(canvas, currentGraph, {
   onStatus: () => undefined,
 });
 
+const quizExpectedPreviewEditor = new CfcEditor(quizExpectedCanvas, createEmptyGraph(), {
+  onGraphChanged: () => undefined,
+  onStatus: () => undefined,
+});
+quizExpectedPreviewEditor.setInteractionLocked(true);
+
+const updateExpectedPreviewToggleButton = (task: QuizTask): void => {
+  const isGraphTask = isGraphQuizTask(task);
+  quizExpectedToggleButton.hidden = !isGraphTask;
+  quizExpectedToggleButton.classList.toggle("is-active", quizExpectedPreviewVisible);
+  if (!isGraphTask) {
+    return;
+  }
+
+  const actionLabel = quizExpectedPreviewVisible ? "Soll-Vorschau ausblenden" : "Soll-Vorschau anzeigen";
+  quizExpectedToggleButton.title = actionLabel;
+  quizExpectedToggleButton.setAttribute("aria-label", actionLabel);
+  quizExpectedToggleButton.setAttribute("aria-pressed", quizExpectedPreviewVisible ? "true" : "false");
+};
+
+const clampExpectedPreviewWidth = (width: number): number => {
+  const stageWidth = graphStage.getBoundingClientRect().width;
+  const maxWidth = Number.isFinite(stageWidth) && stageWidth > 0 ? Math.floor((stageWidth * 2) / 3) : Number.POSITIVE_INFINITY;
+  return Math.max(140, Math.min(maxWidth, Math.round(width)));
+};
+
+const getDefaultExpectedPreviewWidth = (): number => {
+  const stageWidth = graphStage.getBoundingClientRect().width;
+  if (!Number.isFinite(stageWidth) || stageWidth <= 0) {
+    return 320;
+  }
+  return clampExpectedPreviewWidth(stageWidth / 3);
+};
+
+const updateExpectedPreviewZoomLabel = (): void => {
+  quizExpectedZoomValue.textContent = `${Math.round(quizExpectedPreviewEditor.getZoom() * 100)}%`;
+};
+
+const applyExpectedPreviewLayout = (visible: boolean): void => {
+  graphStage.classList.toggle("quiz-preview-visible", visible);
+  quizPreviewResizer.hidden = !visible;
+  quizExpectedPreview.hidden = !visible;
+  if (visible) {
+    quizExpectedPreviewWidthPx = clampExpectedPreviewWidth(quizExpectedPreviewWidthPx);
+    const stageWidth = graphStage.getBoundingClientRect().width;
+    const maxWidth = Number.isFinite(stageWidth) && stageWidth > 0 ? Math.floor((stageWidth * 2) / 3) : null;
+    graphStage.style.setProperty("--quiz-preview-width", `${quizExpectedPreviewWidthPx}px`);
+    quizPreviewResizer.setAttribute("aria-valuemin", "140");
+    if (maxWidth !== null) {
+      quizPreviewResizer.setAttribute("aria-valuemax", String(maxWidth));
+    } else {
+      quizPreviewResizer.removeAttribute("aria-valuemax");
+    }
+    quizPreviewResizer.setAttribute("aria-valuenow", String(quizExpectedPreviewWidthPx));
+    return;
+  }
+
+  graphStage.style.removeProperty("--quiz-preview-width");
+};
+
+const renderExpectedQuizGraphPreview = (task: QuizTask): void => {
+  if (!isGraphQuizTask(task) || !quizExpectedPreviewVisible) {
+    applyExpectedPreviewLayout(false);
+    return;
+  }
+
+  if (quizExpectedPreviewWidthPx <= 0) {
+    quizExpectedPreviewWidthPx = getDefaultExpectedPreviewWidth();
+  }
+
+  const previewGraph = task.expectedGraph ?? task.initialGraph;
+  quizExpectedPreviewEditor.loadGraph(previewGraph);
+  quizExpectedPreviewEditor.resetViewportToOrigin();
+  quizExpectedPreviewEditor.setZoom(1);
+  updateExpectedPreviewZoomLabel();
+  applyExpectedPreviewLayout(true);
+};
+
 const createActiveQuizTaskSessionState = (): QuizTaskSessionState => ({
   graph: editor.getGraph(),
   dataText: dataPanel.getDataText(),
@@ -393,6 +482,8 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   quizCheckFloatingButton.setAttribute("title", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
   quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
   quizDescription.textContent = `${viewState.task.title}: ${viewState.task.description}`;
+  updateExpectedPreviewToggleButton(viewState.task);
+  renderExpectedQuizGraphPreview(viewState.task);
   quizFeedback.textContent = viewState.feedback;
   quizTaskSelect.value = String(viewState.index);
   quizPrevButton.disabled = viewState.index <= 0;
@@ -457,6 +548,10 @@ const setQuizModeActive = (active: boolean): void => {
 
   if (!active) {
     stopAndResetTaskTimer();
+    quizExpectedPreviewVisible = false;
+    quizExpectedPreviewWidthPx = 0;
+    quizExpectedToggleButton.hidden = true;
+    applyExpectedPreviewLayout(false);
     applyTaskEditability();
     if (graphBeforeQuiz) {
       editor.loadGraph(graphBeforeQuiz);
@@ -904,6 +999,69 @@ quizTimerToggleButton.addEventListener("click", () => {
 quizCheckFloatingButton.addEventListener("click", () => {
   runQuizCheck();
 });
+
+quizExpectedToggleButton.addEventListener("click", () => {
+  if (!quizSession.isActive()) {
+    return;
+  }
+
+  quizExpectedPreviewVisible = !quizExpectedPreviewVisible;
+  const activeTask = quizSession.getActiveTask();
+  updateExpectedPreviewToggleButton(activeTask);
+  renderExpectedQuizGraphPreview(activeTask);
+});
+
+quizPreviewResizer.addEventListener("pointerdown", (event) => {
+  if (quizPreviewResizer.hidden) {
+    return;
+  }
+
+  event.preventDefault();
+  quizPreviewResizePointerId = event.pointerId;
+  quizPreviewResizeStartX = event.clientX;
+  quizPreviewResizeStartWidth = quizExpectedPreviewWidthPx;
+  quizPreviewResizer.setPointerCapture(event.pointerId);
+});
+
+quizPreviewResizer.addEventListener("pointermove", (event) => {
+  if (quizPreviewResizePointerId !== event.pointerId) {
+    return;
+  }
+
+  const deltaX = quizPreviewResizeStartX - event.clientX;
+  quizExpectedPreviewWidthPx = clampExpectedPreviewWidth(quizPreviewResizeStartWidth + deltaX);
+  graphStage.style.setProperty("--quiz-preview-width", `${quizExpectedPreviewWidthPx}px`);
+  quizPreviewResizer.setAttribute("aria-valuenow", String(quizExpectedPreviewWidthPx));
+});
+
+const endQuizPreviewResize = (event: PointerEvent): void => {
+  if (quizPreviewResizePointerId !== event.pointerId) {
+    return;
+  }
+
+  quizPreviewResizePointerId = null;
+  if (quizPreviewResizer.hasPointerCapture(event.pointerId)) {
+    quizPreviewResizer.releasePointerCapture(event.pointerId);
+  }
+};
+
+quizPreviewResizer.addEventListener("pointerup", endQuizPreviewResize);
+quizPreviewResizer.addEventListener("pointercancel", endQuizPreviewResize);
+
+quizExpectedCanvas.addEventListener(
+  "wheel",
+  (event: WheelEvent) => {
+    if (!isQuizModeActive || !quizExpectedPreviewVisible || quizExpectedPreview.hidden) {
+      return;
+    }
+
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 0.1 : -0.1;
+    quizExpectedPreviewEditor.zoomAtClient(delta, event.clientX, event.clientY);
+    updateExpectedPreviewZoomLabel();
+  },
+  { passive: false },
+);
 
 quizReworkButton.addEventListener("click", () => {
   if (!isQuizModeActive || !quizSession.isActive() || !activeTaskCompleted) {

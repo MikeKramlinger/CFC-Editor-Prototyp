@@ -35,6 +35,7 @@ interface QuizTaskBase {
   title: string;
   description: string;
   initialGraph: CfcGraph;
+  expectedGraph?: CfcGraph;
 }
 
 export interface QuizGraphTask extends QuizTaskBase {
