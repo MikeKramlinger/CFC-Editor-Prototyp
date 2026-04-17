@@ -1,4 +1,4 @@
-import { cloneGraph, type CfcGraph } from "../model.js";
+import { cloneGraph, createEmptyGraph, type CfcGraph } from "../model.js";
 import { evaluateQuizTask } from "./evaluator.js";
 import {
   isGraphQuizTask,
@@ -27,7 +27,7 @@ const createDefaultTaskSessionState = (task: QuizTask, serializeGraph: (graph: C
 
   if (task.kind === "open") {
     return {
-      graph,
+      graph: createEmptyGraph(),
       dataText: "",
       feedback: "Frage geladen. Trage deine Antwort im Datenfeld ein und klicke auf Speichern.",
       elapsedMs: 0,

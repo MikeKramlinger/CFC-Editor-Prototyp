@@ -1,4 +1,5 @@
 import type { CfcConnection, CfcGraph, CfcNode, CfcNodeType } from "../model.js";
+import { getExecutionOrderByNodeId } from "../core/graph/executionOrder.js";
 import type {
   QuizConnectionExpectation,
   QuizEvaluationContext,
@@ -35,6 +36,138 @@ const matchesNodeExpectation = (node: CfcNode, expectation: QuizNodeExpectation)
     return false;
   }
   return true;
+};
+
+const buildNodeExpectationLabel = (expectation: QuizNodeExpectation): string => {
+  const parts: string[] = [];
+  if (expectation.id) {
+    parts.push(`id=${expectation.id}`);
+  }
+  if (expectation.type) {
+    parts.push(`type=${expectation.type}`);
+  }
+  if (expectation.label) {
+    parts.push(`label=${expectation.label}`);
+  }
+  if (typeof expectation.executionOrder === "number") {
+    parts.push(`executionOrder=${expectation.executionOrder}`);
+  }
+  if (typeof expectation.x === "number") {
+    parts.push(`x=${expectation.x}`);
+  }
+  if (typeof expectation.y === "number") {
+    parts.push(`y=${expectation.y}`);
+  }
+  return parts.join(", ");
+};
+
+const getNodeExecutionOrderInGraph = (graph: CfcGraph, nodeId: string): number | null => {
+  return getExecutionOrderByNodeId(graph.nodes, nodeId);
+};
+
+const findClosestNodeCandidate = (graph: CfcGraph, expectation: QuizNodeExpectation): CfcNode | null => {
+  if (graph.nodes.length === 0) {
+    return null;
+  }
+
+  if (expectation.id) {
+    const nodeById = graph.nodes.find((node) => node.id === expectation.id);
+    if (nodeById) {
+      return nodeById;
+    }
+  }
+
+  let candidates = [...graph.nodes];
+  if (expectation.type) {
+    const typed = candidates.filter((node) => node.type === expectation.type);
+    if (typed.length > 0) {
+      candidates = typed;
+    }
+  }
+  if (expectation.label) {
+    const labeled = candidates.filter((node) => node.label === expectation.label);
+    if (labeled.length > 0) {
+      candidates = labeled;
+    }
+  }
+
+  const scored = candidates.map((node) => {
+    let mismatchCount = 0;
+    let distancePenalty = 0;
+
+    if (typeof expectation.executionOrder === "number") {
+      const executionOrder = getNodeExecutionOrderInGraph(graph, node.id);
+      if (executionOrder !== expectation.executionOrder) {
+        mismatchCount += 1;
+      }
+    }
+    if (typeof expectation.x === "number") {
+      const xDelta = Math.abs(node.x - expectation.x);
+      if (xDelta > 0) {
+        mismatchCount += 1;
+      }
+      distancePenalty += xDelta;
+    }
+    if (typeof expectation.y === "number") {
+      const yDelta = Math.abs(node.y - expectation.y);
+      if (yDelta > 0) {
+        mismatchCount += 1;
+      }
+      distancePenalty += yDelta;
+    }
+
+    return { node, mismatchCount, distancePenalty };
+  });
+
+  scored.sort((left, right) => {
+    if (left.mismatchCount !== right.mismatchCount) {
+      return left.mismatchCount - right.mismatchCount;
+    }
+    return left.distancePenalty - right.distancePenalty;
+  });
+  return scored[0]?.node ?? null;
+};
+
+const collectNodeFieldMismatches = (
+  graph: CfcGraph,
+  candidate: CfcNode,
+  expectation: QuizNodeExpectation,
+): string[] => {
+  const mismatches: string[] = [];
+  const tolerance = expectation.tolerance ?? defaultTolerance;
+  const buildMismatch = (field: string, actual: string | number, expected: string | number): string => {
+    return `${field}: ${actual} ≠ ${expected}`;
+  };
+
+  if (expectation.id && candidate.id !== expectation.id) {
+    mismatches.push(buildMismatch("id", candidate.id, expectation.id));
+  }
+
+  if (expectation.type && candidate.type !== expectation.type) {
+    mismatches.push(buildMismatch("type", candidate.type, expectation.type));
+  }
+
+  if (expectation.label && candidate.label !== expectation.label) {
+    mismatches.push(buildMismatch("label", candidate.label, expectation.label));
+  }
+
+  if (typeof expectation.executionOrder === "number") {
+    const executionOrder = getNodeExecutionOrderInGraph(graph, candidate.id);
+    if (executionOrder !== expectation.executionOrder) {
+      const actual = executionOrder === null ? "keine" : String(executionOrder);
+      mismatches.push(buildMismatch("executionOrder", actual, expectation.executionOrder));
+    }
+  }
+
+  if (typeof expectation.x === "number" && Math.abs(candidate.x - expectation.x) > tolerance) {
+    mismatches.push(buildMismatch("x", candidate.x, expectation.x));
+  }
+
+  if (typeof expectation.y === "number" && Math.abs(candidate.y - expectation.y) > tolerance) {
+    mismatches.push(buildMismatch("y", candidate.y, expectation.y));
+  }
+
+  return mismatches;
 };
 
 const countByType = (graph: CfcGraph): Record<CfcNodeType, number> => {
@@ -144,11 +277,37 @@ export const evaluateQuizTask = ({ graph, task }: QuizEvaluationContext): QuizEv
 
   if (criteria.requiredNodes) {
     criteria.requiredNodes.forEach((requiredNode, index) => {
-      const found = graph.nodes.some((node) => matchesNodeExpectation(node, requiredNode));
-      if (found) {
+      const foundExact = graph.nodes.some((node) => {
+        if (!matchesSelector(node, requiredNode)) {
+          return false;
+        }
+        if (typeof requiredNode.executionOrder === "number") {
+          const executionOrder = getNodeExecutionOrderInGraph(graph, node.id);
+          if (executionOrder !== requiredNode.executionOrder) {
+            return false;
+          }
+        }
+        return matchesNodeExpectation(node, requiredNode);
+      });
+
+      if (foundExact) {
         passedChecks.push(`Pflicht-Node ${index + 1} vorhanden.`);
       } else {
-        failedChecks.push(`Pflicht-Node ${index + 1} fehlt oder ist falsch positioniert.`);
+        const candidate = findClosestNodeCandidate(graph, requiredNode);
+        if (!candidate) {
+          const expected = buildNodeExpectationLabel(requiredNode);
+          failedChecks.push(`Pflicht-Node ${index + 1} fehlt (${expected}).`);
+          return;
+        }
+
+        const mismatches = collectNodeFieldMismatches(graph, candidate, requiredNode);
+        if (mismatches.length === 0) {
+          const expected = buildNodeExpectationLabel(requiredNode);
+          failedChecks.push(`Pflicht-Node ${index + 1} fehlt (${expected}).`);
+          return;
+        }
+
+        failedChecks.push(`Pflicht-Node ${index + 1}: ${mismatches.join(" | ")}.`);
       }
     });
   }

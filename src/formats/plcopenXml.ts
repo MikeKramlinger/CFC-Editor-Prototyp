@@ -2,12 +2,11 @@ import {
   DEFAULT_NODE_TYPE,
   createEmptyGraph,
   getNodeTemplateByType,
-  isCfcNodeType,
-  type CfcNode,
   type CfcGraph,
 } from "../model.js";
 import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
 import type { CfcFormatAdapter } from "./types.js";
+import { buildOrderedNodesFromRaw, buildValidConnectionsFromRaw } from "./shared.js";
 
 const NAMESPACE = "http://www.plcopen.org/xml/tc6_0200";
 
@@ -117,52 +116,39 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     graph.version = cfc.getAttribute("version") ?? "1.0";
 
     const nodeElements = cfc.getElementsByTagNameNS("*", "node");
-    const parsedNodes: Array<{ node: CfcNode; executionOrder: number; sourceIndex: number }> = [];
-    for (const [sourceIndex, nodeElement] of Array.from(nodeElements).entries()) {
-      const rawType = nodeElement.getAttribute("type") ?? DEFAULT_NODE_TYPE;
-      const nodeType = isCfcNodeType(rawType) ? rawType : DEFAULT_NODE_TYPE;
-      const template = getNodeTemplateByType(nodeType);
-      const executionOrder = Math.max(1, Math.floor(parseNumberAttr(nodeElement, "executionOrder", sourceIndex + 1)));
-      const width = Math.max(template.width, parseNumberAttr(nodeElement, "width", template.width));
-      const height = Math.max(template.height, parseNumberAttr(nodeElement, "height", template.height));
-      parsedNodes.push({
-        node: {
-          id: requireAttr(nodeElement, "id"),
-          type: nodeType,
-          label: nodeElement.getAttribute("label") ?? "Block",
-          x: parseNumberAttr(nodeElement, "x"),
-          y: parseNumberAttr(nodeElement, "y"),
-          width,
-          height,
-        },
-        executionOrder,
-        sourceIndex,
-      });
-    }
+    const nodesRaw = Array.from(nodeElements).map((nodeElement, sourceIndex) => {
+      const nodeRaw: Record<string, unknown> = {
+        id: requireAttr(nodeElement, "id"),
+        type: nodeElement.getAttribute("type") ?? DEFAULT_NODE_TYPE,
+        label: nodeElement.getAttribute("label") ?? "Block",
+        x: parseNumberAttr(nodeElement, "x"),
+        y: parseNumberAttr(nodeElement, "y"),
+        width: parseNumberAttr(nodeElement, "width"),
+        height: parseNumberAttr(nodeElement, "height"),
+      };
+      if (nodeElement.hasAttribute("executionOrder")) {
+        nodeRaw.executionOrder = Math.max(1, Math.floor(parseNumberAttr(nodeElement, "executionOrder", sourceIndex + 1)));
+      }
+      return nodeRaw;
+    });
 
-    parsedNodes
-      .sort((left, right) => {
-        if (left.executionOrder !== right.executionOrder) {
-          return left.executionOrder - right.executionOrder;
-        }
-        return left.sourceIndex - right.sourceIndex;
-      })
-      .forEach((entry) => {
-        graph.nodes.push(entry.node);
-      });
+    graph.nodes = buildOrderedNodesFromRaw(nodesRaw);
 
     const connectionElements = cfc.getElementsByTagNameNS("*", "connection");
-    for (const connectionElement of Array.from(connectionElements)) {
+    const connectionsRaw = Array.from(connectionElements).map((connectionElement) => {
       const rawFromPort = connectionElement.getAttribute("fromPort") ?? "output:0";
       const rawToPort = connectionElement.getAttribute("toPort") ?? "input:0";
-      graph.connections.push({
+      return {
         id: requireAttr(connectionElement, "id"),
         fromNodeId: requireAttr(connectionElement, "from"),
         fromPort: rawFromPort === "output" ? "output:0" : rawFromPort,
         toNodeId: requireAttr(connectionElement, "to"),
         toPort: rawToPort === "input" ? "input:0" : rawToPort,
-      });
-    }
+      };
+    });
+
+    const nodeIds = new Set(graph.nodes.map((node) => node.id));
+    graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
 
     return graph;
   },

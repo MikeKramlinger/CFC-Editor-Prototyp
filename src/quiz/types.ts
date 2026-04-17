@@ -7,6 +7,7 @@ export interface QuizNodeSelector {
 }
 
 export interface QuizNodeExpectation extends QuizNodeSelector {
+  executionOrder?: number;
   x?: number;
   y?: number;
   tolerance?: number;
@@ -45,6 +46,7 @@ export interface QuizGraphTask extends QuizTaskBase {
 
 export interface QuizOpenTask extends QuizTaskBase {
   kind: "open";
+  independentOfFormat?: boolean;
   placeholder?: string;
   saveMessage?: string;
 }

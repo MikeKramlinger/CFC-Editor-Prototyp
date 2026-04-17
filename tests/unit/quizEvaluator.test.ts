@@ -62,6 +62,43 @@ describe("quiz evaluator", () => {
     const result = evaluateQuizTask({ graph: wrong, task });
 
     expect(result.success).toBe(false);
-    expect(result.failedChecks[0]).toContain("Pflicht-Node");
+    expect(result.failedChecks[0]).toContain("x: 13 ≠ 12");
+    expect(result.failedChecks[0]).not.toContain("y:");
+  });
+
+  it("reports id mismatch details for required nodes", () => {
+    const task: QuizTask = {
+      id: "t3",
+      kind: "graph",
+      title: "Task",
+      description: "desc",
+      initialGraph: makeGraph(),
+      criteria: {
+        requiredNodes: [{ id: "N3", type: "box", label: "Step" }],
+      },
+    };
+
+    const result = evaluateQuizTask({ graph: makeGraph(), task });
+
+    expect(result.success).toBe(false);
+    expect(result.failedChecks[0]).toContain("id: N2 ≠ N3");
+  });
+
+  it("reports executionOrder mismatch details", () => {
+    const task: QuizTask = {
+      id: "t4",
+      kind: "graph",
+      title: "Task",
+      description: "desc",
+      initialGraph: makeGraph(),
+      criteria: {
+        requiredNodes: [{ type: "box", label: "Step", executionOrder: 2 }],
+      },
+    };
+
+    const result = evaluateQuizTask({ graph: makeGraph(), task });
+
+    expect(result.success).toBe(false);
+    expect(result.failedChecks[0]).toContain("executionOrder: 1 ≠ 2");
   });
 });

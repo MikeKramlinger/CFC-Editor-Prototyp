@@ -25,6 +25,7 @@ import { getToolbarUiElements } from "./ui/views/toolbarUi.js";
 import { getToolboxUiElements } from "./ui/views/toolboxUi.js";
 import {
   CFC_NODE_TEMPLATES,
+  cloneGraph,
   createEmptyGraph,
   getNodeTemplateByType,
   isCfcNodeType,
@@ -100,7 +101,9 @@ let quizExpectedPreviewWidthPx = 0;
 let quizPreviewResizePointerId: number | null = null;
 let quizPreviewResizeStartX = 0;
 let quizPreviewResizeStartWidth = 0;
-const quizSession = createQuizSession({ tasks: SAMPLE_QUIZ_TASKS });
+let quizTasks: QuizTask[] = [...SAMPLE_QUIZ_TASKS];
+let quizTaskFormatByTaskId = new Map<string, string>();
+let quizSession = createQuizSession({ tasks: quizTasks });
 const quizPersistence = createQuizPersistence();
 const participantNameDialog = createParticipantNameDialogController({
   ui: participantNameDialogUi,
@@ -182,7 +185,87 @@ const canRestoreQuizFromExport = (sessionExport: QuizSessionExport): boolean => 
   if (importedTaskIds.size === 0) {
     return false;
   }
-  return SAMPLE_QUIZ_TASKS.every((task) => importedTaskIds.has(task.id));
+  return quizTasks.every((task) => importedTaskIds.has(task.id));
+};
+
+const createQuizTaskPlanForAdapters = (tasks: QuizTask[], adaptersForPlan: Array<{ id: string; label: string }>): {
+  plannedTasks: QuizTask[];
+  formatByTaskId: Map<string, string>;
+} => {
+  const plannedTasks: QuizTask[] = [];
+  const formatByTaskId = new Map<string, string>();
+  const formatIndependentOpenTasks = tasks.filter(
+    (task): task is Extract<QuizTask, { kind: "open" }> => task.kind === "open" && task.independentOfFormat === true,
+  );
+  const formatBoundTasks = tasks.filter((task) => {
+    return !(task.kind === "open" && task.independentOfFormat === true);
+  });
+
+  adaptersForPlan.forEach((adapter) => {
+    formatBoundTasks.forEach((task) => {
+      const plannedTaskId = `${adapter.id}::${task.id}`;
+      const plannedTitle = `${task.title} [${adapter.label}]`;
+
+      if (task.kind === "graph") {
+        const plannedTask: QuizTask = {
+          ...task,
+          id: plannedTaskId,
+          title: plannedTitle,
+          initialGraph: cloneGraph(task.initialGraph),
+          expectedGraph: task.expectedGraph ? cloneGraph(task.expectedGraph) : undefined,
+          criteria: { ...task.criteria },
+        };
+        plannedTasks.push(plannedTask);
+      } else {
+        const plannedTask: QuizTask = {
+          ...task,
+          id: plannedTaskId,
+          title: plannedTitle,
+          initialGraph: cloneGraph(task.initialGraph),
+        };
+        plannedTasks.push(plannedTask);
+      }
+
+      formatByTaskId.set(plannedTaskId, adapter.id);
+    });
+  });
+
+  formatIndependentOpenTasks.forEach((task) => {
+    const plannedTask: QuizTask = {
+      ...task,
+      id: task.id,
+      title: task.title,
+      initialGraph: cloneGraph(task.initialGraph),
+    };
+    plannedTasks.push(plannedTask);
+  });
+
+  return {
+    plannedTasks,
+    formatByTaskId,
+  };
+};
+
+const rebuildQuizTaskSelectOptions = (): void => {
+  quizTaskSelect.replaceChildren();
+  quizSession.getTasks().forEach((task, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `${index + 1}. ${task.title}`;
+    quizTaskSelect.append(option);
+  });
+};
+
+const setQuizFormatForTaskIndex = (index: number): void => {
+  const task = quizSession.getTasks()[index];
+  if (!task) {
+    return;
+  }
+  const formatId = quizTaskFormatByTaskId.get(task.id);
+  if (!formatId || toolbarUi.formatSelect.value === formatId) {
+    return;
+  }
+  toolbarUi.formatSelect.value = formatId;
 };
 
 const setQuizEntryOverlayOpen = (open: boolean): void => {
@@ -199,6 +282,7 @@ const startNewQuiz = (): void => {
   setQuizModeActive(true);
   stopAndResetTaskTimer();
   quizPersistence.clearQueuedAttempts();
+  setQuizFormatForTaskIndex(0);
   applyQuizTaskViewState(quizSession.start(serializeQuizGraph));
 };
 
@@ -214,6 +298,8 @@ const resumeQuizFromExport = (sessionExport: QuizSessionExport): void => {
   setQuizEntryOverlayOpen(false);
   pauseTaskTimer();
 
+  const restoreIndex = Math.max(0, Math.min(quizSession.getTasks().length - 1, sessionExport.session.activeIndex ?? 0));
+  setQuizFormatForTaskIndex(restoreIndex);
   const restoredViewState = quizSession.restore(sessionExport.session, serializeQuizGraph);
   quizPersistence.replaceQueuedAttempts(sessionExport.attempts);
   applyQuizTaskViewState(restoredViewState);
@@ -310,6 +396,13 @@ const isActiveOpenTask = (): boolean => {
 
 const applyTaskEditability = (): void => {
   const isOpenTask = isActiveOpenTask();
+  if (isOpenTask) {
+    quizExpectedPreviewVisible = false;
+    quizExpectedToggleButton.hidden = true;
+    quizExpectedToggleButton.classList.remove("is-active");
+    quizExpectedToggleButton.setAttribute("aria-pressed", "false");
+    applyExpectedPreviewLayout(false);
+  }
   const locked = isQuizModeActive && activeTaskCompleted;
   const canRework = locked && isOpenTask;
   dataPanelUi.dataText.readOnly = locked;
@@ -319,7 +412,7 @@ const applyTaskEditability = (): void => {
   dataArea.classList.toggle("task-locked", locked);
   dataEditor.classList.toggle("is-readonly", locked);
   quizTimerInline.classList.toggle("is-completed", locked);
-  quizTaskLocked.hidden = !locked;
+  quizTaskLocked.hidden = !locked || isOpenTask;
   quizCheckFloatingButton.disabled = locked;
   quizTimerToggleButton.hidden = locked;
   quizTimerToggleButton.disabled = !isQuizModeActive || activeTaskCompleted;
@@ -364,12 +457,14 @@ adapters.forEach((adapter) => {
   toolbarUi.formatSelect.append(option);
 });
 
-quizSession.getTasks().forEach((task, index) => {
-  const option = document.createElement("option");
-  option.value = String(index);
-  option.textContent = `${index + 1}. ${task.title}`;
-  quizTaskSelect.append(option);
-});
+const quizTaskPlan = createQuizTaskPlanForAdapters(SAMPLE_QUIZ_TASKS, adapters.map((adapter) => ({
+  id: adapter.id,
+  label: adapter.label,
+})));
+quizTasks = quizTaskPlan.plannedTasks;
+quizTaskFormatByTaskId = quizTaskPlan.formatByTaskId;
+quizSession = createQuizSession({ tasks: quizTasks });
+rebuildQuizTaskSelectOptions();
 
 const defaultAdapter = adapters[0]!;
 const getCurrentAdapter = () => getAdapterById(toolbarUi.formatSelect.value || defaultAdapter.id);
@@ -391,8 +486,7 @@ const updateExpectedPreviewToggleButton = (task: QuizTask): void => {
   const isGraphTask = isGraphQuizTask(task);
   quizExpectedToggleButton.hidden = !isGraphTask;
   quizExpectedToggleButton.classList.toggle("is-active", quizExpectedPreviewVisible);
-  if (!isGraphTask) {
-    return;
+  if (!isGraphTask) {    return;
   }
 
   const actionLabel = quizExpectedPreviewVisible ? "Soll-Vorschau ausblenden" : "Soll-Vorschau anzeigen";
@@ -466,6 +560,7 @@ const renderExpectedQuizGraphPreview = (task: QuizTask): void => {
   }
 
   const previewGraph = task.expectedGraph ?? task.initialGraph;
+  quizExpectedPreviewLabel.textContent = `Vorschau: ${task.title}`;
   quizExpectedPreviewEditor.loadGraph(previewGraph);
   quizExpectedPreviewEditor.resetViewportToOrigin();
   quizExpectedPreviewEditor.setZoom(1);
@@ -486,7 +581,10 @@ const serializeQuizGraph = (graph: CfcGraph): string => getCurrentAdapter().seri
 
 const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   pauseTaskTimer();
-  editor.loadGraph(viewState.graph);
+  setQuizFormatForTaskIndex(viewState.index);
+  const isOpenTask = viewState.task.kind === "open";
+  const taskGraph = isOpenTask ? createEmptyGraph() : viewState.graph;
+  editor.loadGraph(taskGraph);
   currentGraph = editor.getGraph();
   dataPanel.setDataText(viewState.dataText);
   activeTaskElapsedMs = viewState.elapsedMs;
@@ -495,12 +593,30 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   dataPanelUi.dataText.placeholder = viewState.task.kind === "open"
     ? viewState.task.placeholder ?? "Antwort hier eingeben..."
     : "";
-  const isOpenTask = viewState.task.kind === "open";
+  if (isOpenTask) {
+    quizExpectedPreviewVisible = false;
+    applyExpectedPreviewLayout(false);
+    quizExpectedToggleButton.hidden = true;
+    quizExpectedToggleButton.classList.remove("is-active");
+    quizExpectedToggleButton.setAttribute("aria-pressed", "false");
+  }
   quizCheckFloatingButton.setAttribute("title", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
   quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
   quizDescription.textContent = `${viewState.task.title}: ${viewState.task.description}`;
   updateExpectedPreviewToggleButton(viewState.task);
   renderExpectedQuizGraphPreview(viewState.task);
+  if (quizExpectedPreviewVisible && isGraphQuizTask(viewState.task)) {
+    window.requestAnimationFrame(() => {
+      if (!isQuizModeActive || !quizSession.isActive()) {
+        return;
+      }
+      const stillActiveTask = quizSession.getActiveTask();
+      if (stillActiveTask.id !== viewState.task.id) {
+        return;
+      }
+      renderExpectedQuizGraphPreview(stillActiveTask);
+    });
+  }
   quizFeedback.textContent = viewState.feedback;
   quizTaskSelect.value = String(viewState.index);
   quizPrevButton.disabled = viewState.index <= 0;
@@ -584,26 +700,40 @@ const setQuizModeActive = (active: boolean): void => {
 
 const importQuizDataIntoGraph = (): boolean => {
   let importedGraph: CfcGraph;
-  let shouldSyncDataText = false;
+  const rawDataText = dataPanel.getDataText();
   try {
-    importedGraph = getCurrentAdapter().deserialize(dataPanel.getDataText());
-    shouldSyncDataText = importedGraph.nodes.some((node) => {
-      const template = getNodeTemplateByType(node.type);
-      return node.width < template.width || node.height < template.height;
-    });
+    importedGraph = getCurrentAdapter().deserialize(rawDataText);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    quizFeedback.textContent = `❌ Ungültiges Datenformat: ${message}`;
+    quizFeedback.textContent = `❌ ${message}`;
     quizSession.saveActiveState(createActiveQuizTaskSessionState());
     return false;
   }
 
   editor.loadGraph(importedGraph);
   currentGraph = editor.getGraph();
-  if (shouldSyncDataText) {
-    dataPanel.setDataText(getCurrentAdapter().serialize(currentGraph));
+  const normalizedDataText = getCurrentAdapter().serialize(currentGraph);
+  if (normalizedDataText !== rawDataText) {
+    dataPanel.setDataText(normalizedDataText);
   }
   return true;
+};
+
+const formatQuizFailedChecks = (failedChecks: string[]): string => {
+  if (failedChecks.length === 0) {
+    return "❌ Noch nicht erfüllt.";
+  }
+
+  const [primaryIssue, ...remainingIssues] = failedChecks;
+  if (!primaryIssue) {
+    return "❌ Noch nicht erfüllt.";
+  }
+
+  if (remainingIssues.length === 0) {
+    return `❌ ${primaryIssue}`;
+  }
+
+  return `❌ ${primaryIssue}\nWeitere: ${remainingIssues.join(" | ")}`;
 };
 
 const runQuizCheck = (): void => {
@@ -671,7 +801,7 @@ const runQuizCheck = (): void => {
     return;
   }
 
-  const failedMessage = `❌ Noch nicht erfüllt: ${result.failedChecks.join(" | ")}`;
+  const failedMessage = formatQuizFailedChecks(result.failedChecks);
   quizFeedback.textContent = failedMessage;
   quizSession.saveActiveState(createActiveQuizTaskSessionState());
   queueAttempt(false, failedMessage, result.failedChecks, result.passedChecks);
@@ -973,6 +1103,7 @@ quizTaskSelect.addEventListener("change", () => {
   if (Number.isNaN(index)) {
     return;
   }
+  setQuizFormatForTaskIndex(index);
   applyQuizTaskViewState(
     quizSession.selectTask(index, createActiveQuizTaskSessionState(), serializeQuizGraph),
   );
@@ -983,6 +1114,7 @@ quizPrevButton.addEventListener("click", () => {
     return;
   }
   const previousIndex = Math.max(0, quizSession.getActiveIndex() - 1);
+  setQuizFormatForTaskIndex(previousIndex);
   applyQuizTaskViewState(
     quizSession.selectTask(previousIndex, createActiveQuizTaskSessionState(), serializeQuizGraph),
   );
@@ -1083,6 +1215,14 @@ quizExpectedZoomInButton.addEventListener("click", () => {
   applyExpectedPreviewZoomDelta(0.1);
 });
 
+quizExpectedZoomValue.addEventListener("click", () => {
+  if (!isQuizModeActive || !quizExpectedPreviewVisible || quizExpectedPreview.hidden) {
+    return;
+  }
+  quizExpectedPreviewEditor.resetViewportToOrigin();
+  updateExpectedPreviewZoomLabel();
+});
+
 quizReworkButton.addEventListener("click", () => {
   if (!isQuizModeActive || !quizSession.isActive() || !activeTaskCompleted) {
     return;
@@ -1104,6 +1244,7 @@ quizNextButton.addEventListener("click", () => {
     return;
   }
   const nextIndex = Math.min(quizSession.getTasks().length - 1, quizSession.getActiveIndex() + 1);
+  setQuizFormatForTaskIndex(nextIndex);
   applyQuizTaskViewState(
     quizSession.selectTask(nextIndex, createActiveQuizTaskSessionState(), serializeQuizGraph),
   );

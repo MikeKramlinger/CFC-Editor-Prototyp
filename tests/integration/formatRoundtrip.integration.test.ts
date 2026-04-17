@@ -60,7 +60,7 @@ describe("format roundtrip integration", () => {
     const raw = JSON.stringify({
       version: "2.0",
       nodes: [
-        { id: "A", type: "unknown", label: "X", executionOrder: 2, x: 1, y: 2, width: 3, height: 4 },
+        { id: "A", label: "X", executionOrder: 2, x: 1, y: 2, width: 3, height: 4 },
         { id: "B", type: "box", label: "Y", executionOrder: 1, x: 5, y: 6, width: 7, height: 8 },
       ],
       connections: [
@@ -81,7 +81,6 @@ describe("format roundtrip integration", () => {
     const raw = `version: "3.0"
 nodes:
   - id: A
-    type: nope
     label: X
     executionOrder: 2
     x: 1
@@ -115,6 +114,104 @@ connections:
     expect(graph.nodes[0]?.id).toBe("B");
     expect(graph.connections).toHaveLength(1);
     expect(graph.connections[0]).toMatchObject({ fromPort: "output:0", toPort: "input:0" });
+  });
+
+  it("throws on invalid explicit node type in JSON", () => {
+    const raw = JSON.stringify({
+      version: "1.0",
+      nodes: [
+        { id: "N1", type: "boxa", label: "A", x: 1, y: 1 },
+      ],
+      connections: [],
+    });
+
+    expect(() => jsonFormat.deserialize(raw)).toThrow("ungültiger type");
+  });
+
+  it("throws on invalid explicit node type in PLCopenXML", () => {
+    const raw = `<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <cfcEditor version="1.0">
+    <nodes>
+      <node id="N1" type="boxa" label="Bad" x="2" y="4" width="5" height="2"/>
+    </nodes>
+    <connections/>
+  </cfcEditor>
+</project>`;
+
+    const adapter = getAdapterById("plcopen-xml");
+    expect(() => adapter.deserialize(raw)).toThrow("ungültiger type");
+  });
+
+  it("throws on duplicate node ids in JSON", () => {
+    const raw = JSON.stringify({
+      version: "1.0",
+      nodes: [
+        { id: "N1", type: "box", label: "A", executionOrder: 1, x: 1, y: 1 },
+        { id: "N1", type: "box", label: "B", executionOrder: 1, x: 4, y: 1 },
+      ],
+      connections: [],
+    });
+
+    let message = "";
+    try {
+      jsonFormat.deserialize(raw);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain("id bereits belegt");
+    expect(message).toContain("executionOrder bereits belegt");
+  });
+
+  it("throws on non-contiguous executionOrder in YAML", () => {
+    const raw = `version: "1.0"
+nodes:
+  - id: N1
+    type: box
+    label: A
+    executionOrder: 1
+    x: 1
+    y: 1
+    width: 6
+    height: 3
+  - id: N2
+    type: box
+    label: B
+    executionOrder: 3
+    x: 8
+    y: 1
+    width: 6
+    height: 3
+connections:
+`;
+
+    expect(() => yamlFormat.deserialize(raw)).toThrow("executionOrder muss durchgängig nummeriert sein");
+  });
+
+  it("throws on duplicate id and executionOrder in PLCopenXML node list", () => {
+    const raw = `<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <cfcEditor version="1.0">
+    <nodes>
+      <node id="N1" type="input" label="In" x="2" y="4" width="5" height="2"/>
+      <node id="N2" type="output" label="Out" executionOrder="1" x="28" y="4" width="5" height="2"/>
+      <node id="N2" type="box" label="Out" executionOrder="1" x="12" y="8" width="5" height="2"/>
+    </nodes>
+    <connections/>
+  </cfcEditor>
+</project>`;
+
+    const adapter = getAdapterById("plcopen-xml");
+    let message = "";
+    try {
+      adapter.deserialize(raw);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain("id bereits belegt");
+    expect(message).toContain("executionOrder bereits belegt");
   });
 
   it("throws on unknown adapter lookup", () => {

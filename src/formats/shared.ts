@@ -44,6 +44,7 @@ export const normalizePort = (value: unknown, kind: "input" | "output"): string 
 export interface ParsedNodeEntry {
   node: CfcNode;
   executionOrder: number;
+  hasExplicitExecutionOrder: boolean;
   sourceIndex: number;
 }
 
@@ -52,9 +53,16 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
     return null;
   }
 
-  const rawType = toStringValue(entry.type, DEFAULT_NODE_TYPE);
-  const type = isCfcNodeType(rawType) ? rawType : DEFAULT_NODE_TYPE;
+  let type = DEFAULT_NODE_TYPE;
+  if (typeof entry.type === "string" && entry.type.length > 0) {
+    if (!isCfcNodeType(entry.type)) {
+      const nodeId = toStringValue(entry.id, `N${index + 1}`);
+      throw new Error(`Ungültige Nodes: ungültiger type "${entry.type}" bei Node "${nodeId}".`);
+    }
+    type = entry.type;
+  }
   const template = getNodeTemplateByType(type);
+  const hasExplicitExecutionOrder = Object.prototype.hasOwnProperty.call(entry, "executionOrder");
   const executionOrder = Math.max(1, Math.floor(toFiniteNumber(entry.executionOrder, index + 1)));
   const width = Math.max(template.width, toFiniteNumber(entry.width, template.width));
   const height = Math.max(template.height, toFiniteNumber(entry.height, template.height));
@@ -70,6 +78,7 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
       height,
     },
     executionOrder,
+    hasExplicitExecutionOrder,
     sourceIndex: index,
   };
 };
@@ -97,12 +106,76 @@ export const sortParsedNodeEntries = (entries: ParsedNodeEntry[]): ParsedNodeEnt
   });
 };
 
+const joinQuoted = (values: string[]): string => values.map((value) => `"${value}"`).join(", ");
+
+const collectUniqueNodeIdError = (entries: ParsedNodeEntry[]): string | null => {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+
+  entries.forEach((entry) => {
+    const id = entry.node.id;
+    if (seen.has(id)) {
+      duplicates.add(id);
+      return;
+    }
+    seen.add(id);
+  });
+
+  if (duplicates.size > 0) {
+    const duplicateIds = [...duplicates].sort((left, right) => left.localeCompare(right));
+    return `id bereits belegt (${joinQuoted(duplicateIds)})`;
+  }
+  return null;
+};
+
+const collectExplicitExecutionOrderErrors = (entries: ParsedNodeEntry[]): string[] => {
+  const errors: string[] = [];
+  const explicitEntries = entries.filter((entry) => entry.hasExplicitExecutionOrder);
+  if (explicitEntries.length === 0) {
+    return errors;
+  }
+
+  const seenOrders = new Set<number>();
+  const duplicateOrders = new Set<number>();
+  explicitEntries.forEach((entry) => {
+    if (seenOrders.has(entry.executionOrder)) {
+      duplicateOrders.add(entry.executionOrder);
+      return;
+    }
+    seenOrders.add(entry.executionOrder);
+  });
+
+  if (duplicateOrders.size > 0) {
+    const duplicateOrderText = [...duplicateOrders].sort((left, right) => left - right).join(", ");
+    errors.push(`executionOrder bereits belegt (${duplicateOrderText})`);
+  }
+
+  const sortedOrders = [...seenOrders].sort((left, right) => left - right);
+  const isContinuous = sortedOrders.every((order, index) => order === index + 1);
+  if (!isContinuous) {
+    errors.push(
+      `executionOrder muss durchgängig nummeriert sein (erwartet 1..${sortedOrders.length}, gefunden ${sortedOrders.join(", ")})`,
+    );
+  }
+  return errors;
+};
+
 export const buildOrderedNodesFromRaw = (nodesRaw: unknown[]): CfcNode[] => {
-  return sortParsedNodeEntries(
-    nodesRaw
-      .map((entry, index) => parseNodeEntry(entry, index))
-      .filter((entry): entry is ParsedNodeEntry => entry !== null),
-  ).map((entry) => entry.node);
+  const entries = nodesRaw
+    .map((entry, index) => parseNodeEntry(entry, index))
+    .filter((entry): entry is ParsedNodeEntry => entry !== null);
+
+  const validationErrors: string[] = [];
+  const uniqueIdError = collectUniqueNodeIdError(entries);
+  if (uniqueIdError) {
+    validationErrors.push(uniqueIdError);
+  }
+  validationErrors.push(...collectExplicitExecutionOrderErrors(entries));
+  if (validationErrors.length > 0) {
+    throw new Error(`Ungültige Nodes: ${validationErrors.join(" | ")}.`);
+  }
+
+  return sortParsedNodeEntries(entries).map((entry) => entry.node);
 };
 
 export const buildValidConnectionsFromRaw = (connectionsRaw: unknown[], nodeIds: Set<string>): CfcConnection[] => {

@@ -113,6 +113,33 @@ const createBaseOptions = () => {
 };
 
 describe("ToolbarController bulk create", () => {
+  it("normalizes data text on import when serialized graph differs", () => {
+    const {
+      options,
+    } = createBaseOptions();
+
+    const inputText = "raw-import-text";
+    const normalizedText = "normalized-export-text";
+    const parsedGraph = { version: "1.0", nodes: [], connections: [] };
+    const setDataText = vi.fn();
+
+    options.getCurrentAdapter = () => ({
+      serialize: () => normalizedText,
+      deserialize: () => parsedGraph,
+      id: "json",
+      label: "JSON",
+      fileExtension: "json",
+    });
+    options.getDataText = () => inputText;
+    options.getCurrentGraph = () => parsedGraph;
+    options.setDataText = setDataText;
+
+    createToolbarController(options);
+    options.importButton.click();
+
+    expect(setDataText).toHaveBeenCalledWith(normalizedText);
+  });
+
   it("shows and enables connection count controls in manual mode by default", () => {
     const {
       options,

@@ -104,6 +104,7 @@ export const SAMPLE_QUIZ_TASKS: QuizTask[] = [
   {
     id: "task-open-question-reasoning",
     kind: "open",
+    independentOfFormat: true,
     title: "Offene Frage",
     description: "Beschreibe kurz, warum eine klare Signalrichtung im Graphen wichtig ist.",
     initialGraph: cloneGraph(baseGraph),

@@ -79,12 +79,6 @@ const formatKb = (value: number): string => `${value.toFixed(2)} KB`;
 
 const formatMs = (value: number): string => `${value.toFixed(2)} ms`;
 
-const hasNodeBelowMinimumSize = (graph: CfcGraph): boolean =>
-  graph.nodes.some((node) => {
-    const template = getNodeTemplateByType(node.type);
-    return node.width < template.width || node.height < template.height;
-  });
-
 const buildBulkTypeCountInputs = (
   container: HTMLDivElement,
   options: BulkTypeOption[],
@@ -162,13 +156,14 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
   const triggerImport = (): void => {
     try {
       const adapter = options.getCurrentAdapter();
-      const graph = adapter.deserialize(options.getDataText());
-      const shouldSyncDataText = hasNodeBelowMinimumSize(graph);
+      const rawDataText = options.getDataText();
+      const graph = adapter.deserialize(rawDataText);
       options.loadGraph(graph);
       const normalizedGraph = options.getCurrentGraph();
       options.setCurrentGraph(normalizedGraph);
-      if (shouldSyncDataText) {
-        options.setDataText(adapter.serialize(normalizedGraph));
+      const normalizedDataText = adapter.serialize(normalizedGraph);
+      if (normalizedDataText !== rawDataText) {
+        options.setDataText(normalizedDataText);
       }
     } catch (error) {
       return;

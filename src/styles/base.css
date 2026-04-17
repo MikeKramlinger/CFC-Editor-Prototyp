@@ -1066,14 +1066,13 @@ input[type="number"]:hover {
 }
 
 .quiz-task-locked {
-  font-size: 13px;
-  line-height: 1;
+  font-size: 12px;
+  padding-bottom: 2px;
 }
 
 .quiz-rework-inline {
-  padding: 2px 8px;
-  font-size: 11px;
-  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 12px;
 }
 
 .data-area__header label {
@@ -1249,6 +1248,10 @@ textarea {
   color: #3f4756;
   overflow: hidden;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.quiz-expected-toggle[hidden] {
+  display: none;
 }
 
 .quiz-expected-toggle::after {

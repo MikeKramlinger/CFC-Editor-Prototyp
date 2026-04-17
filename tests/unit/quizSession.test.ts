@@ -94,6 +94,8 @@ describe("quiz session", () => {
     const first = session.start(serializeGraph);
 
     expect(first.dataText).toBe("");
+    expect(first.graph.nodes).toHaveLength(0);
+    expect(first.graph.connections).toHaveLength(0);
     expect(first.feedback).toContain("Frage geladen");
     expect(first.elapsedMs).toBe(0);
     expect(first.isCompleted).toBe(false);
