@@ -1,4 +1,4 @@
-import type { CfcConnection, CfcGraph, CfcNode, CfcNodeType } from "../model.js";
+import type { CfcGraph, CfcNodeType } from "../model.js";
 
 export interface QuizNodeSelector {
   id?: string;
@@ -90,6 +90,3 @@ export interface QuizSessionSnapshot {
   activeIndex: number;
   taskStates: Record<string, QuizTaskSessionState>;
 }
-
-export type NodePredicate = (node: CfcNode) => boolean;
-export type ConnectionPredicate = (connection: CfcConnection) => boolean;

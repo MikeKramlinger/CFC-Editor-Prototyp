@@ -568,6 +568,14 @@ const renderExpectedQuizGraphPreview = (task: QuizTask): void => {
   applyExpectedPreviewLayout(true);
 };
 
+const resetOpenTaskExpectedPreviewUi = (): void => {
+  quizExpectedPreviewVisible = false;
+  applyExpectedPreviewLayout(false);
+  quizExpectedToggleButton.hidden = true;
+  quizExpectedToggleButton.classList.remove("is-active");
+  quizExpectedToggleButton.setAttribute("aria-pressed", "false");
+};
+
 const createActiveQuizTaskSessionState = (): QuizTaskSessionState => ({
   graph: editor.getGraph(),
   dataText: dataPanel.getDataText(),
@@ -594,11 +602,7 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
     ? viewState.task.placeholder ?? "Antwort hier eingeben..."
     : "";
   if (isOpenTask) {
-    quizExpectedPreviewVisible = false;
-    applyExpectedPreviewLayout(false);
-    quizExpectedToggleButton.hidden = true;
-    quizExpectedToggleButton.classList.remove("is-active");
-    quizExpectedToggleButton.setAttribute("aria-pressed", "false");
+    resetOpenTaskExpectedPreviewUi();
   }
   quizCheckFloatingButton.setAttribute("title", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
   quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
@@ -1103,7 +1107,6 @@ quizTaskSelect.addEventListener("change", () => {
   if (Number.isNaN(index)) {
     return;
   }
-  setQuizFormatForTaskIndex(index);
   applyQuizTaskViewState(
     quizSession.selectTask(index, createActiveQuizTaskSessionState(), serializeQuizGraph),
   );
@@ -1114,7 +1117,6 @@ quizPrevButton.addEventListener("click", () => {
     return;
   }
   const previousIndex = Math.max(0, quizSession.getActiveIndex() - 1);
-  setQuizFormatForTaskIndex(previousIndex);
   applyQuizTaskViewState(
     quizSession.selectTask(previousIndex, createActiveQuizTaskSessionState(), serializeQuizGraph),
   );
@@ -1244,7 +1246,6 @@ quizNextButton.addEventListener("click", () => {
     return;
   }
   const nextIndex = Math.min(quizSession.getTasks().length - 1, quizSession.getActiveIndex() + 1);
-  setQuizFormatForTaskIndex(nextIndex);
   applyQuizTaskViewState(
     quizSession.selectTask(nextIndex, createActiveQuizTaskSessionState(), serializeQuizGraph),
   );

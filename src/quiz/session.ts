@@ -23,8 +23,6 @@ const cloneTaskSessionState = (state: QuizTaskSessionState): QuizTaskSessionStat
 });
 
 const createDefaultTaskSessionState = (task: QuizTask, serializeGraph: (graph: CfcGraph) => string): QuizTaskSessionState => {
-  const graph = cloneGraph(task.initialGraph);
-
   if (task.kind === "open") {
     return {
       graph: createEmptyGraph(),
@@ -35,6 +33,8 @@ const createDefaultTaskSessionState = (task: QuizTask, serializeGraph: (graph: C
       answerHistory: [],
     };
   }
+
+  const graph = cloneGraph(task.initialGraph);
 
   return {
     graph,
@@ -56,7 +56,6 @@ export interface QuizSession {
   saveActiveState: (state: QuizTaskSessionState) => void;
   getSnapshot: () => QuizSessionSnapshot;
   selectTask: (index: number, currentState: QuizTaskSessionState, serializeGraph: (graph: CfcGraph) => string) => QuizTaskViewState;
-  nextTask: (currentState: QuizTaskSessionState, serializeGraph: (graph: CfcGraph) => string) => QuizTaskViewState;
   evaluateActiveTask: (graph: CfcGraph) => QuizEvaluationResult;
 }
 
@@ -148,11 +147,6 @@ export const createQuizSession = (options: CreateQuizSessionOptions): QuizSessio
     selectTask: (index, currentState, serializeGraph) => {
       saveActiveState(currentState);
       activeIndex = Math.max(0, Math.min(tasks.length - 1, index));
-      return createViewState(serializeGraph);
-    },
-    nextTask: (currentState, serializeGraph) => {
-      saveActiveState(currentState);
-      activeIndex = (activeIndex + 1) % tasks.length;
       return createViewState(serializeGraph);
     },
     evaluateActiveTask: (graph) => {

@@ -112,5 +112,3 @@ export const SAMPLE_QUIZ_TASKS: QuizTask[] = [
     saveMessage: "💾 Antwort gespeichert.",
   },
 ];
-
-export const createEmptyQuizGraph = (): CfcGraph => createEmptyGraph();
