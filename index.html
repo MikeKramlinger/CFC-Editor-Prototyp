@@ -26,7 +26,7 @@
         <div id="quiz-menu" class="quiz-menu" hidden>
           <div class="toolbar__row">
             <button id="quiz-back" class="quiz-back-button" type="button" title="Quiz abbrechen und zur Bearbeitung zurückkehren">←</button>
-            <button id="quiz-end" type="button">Quiz beenden</button>
+            <button id="quiz-end" type="button" title="Quiz beenden und Ergebnisse exportieren">Quiz beenden</button>
           </div>
           <div id="quiz-panel" class="quiz-panel">
             <p id="quiz-description" class="quiz-description"></p>
@@ -149,10 +149,10 @@
               <span><strong id="quiz-task-timer">00:00</strong></span>
               <button id="quiz-timer-toggle" type="button">Pause</button>
               <span id="quiz-task-locked" class="quiz-task-locked" title="Aufgabe ist abgeschlossen und gesperrt" hidden>🔒</span>
-              <button id="quiz-rework" class="quiz-rework-inline" type="button" hidden>Überarbeiten</button>
+              <button id="quiz-rework" class="quiz-rework-inline" type="button" title="Antwort wieder freischalten" hidden>Überarbeiten</button>
             </div>
           </div>
-          <button id="data-toggle" type="button" aria-expanded="false" aria-label="Datenbereich vergrößern">⤢</button>
+          <button id="data-toggle" type="button" aria-expanded="false" aria-label="Datenbereich vergrößern" title="Datenbereich ein- oder ausklappen">⤢</button>
         </div>
         <div class="data-editor">
           <pre id="data-lines" class="data-lines" aria-hidden="true">1</pre>

@@ -231,12 +231,6 @@ body {
   line-height: 1;
 }
 
-.bulk-type-reset:hover,
-.bulk-type-reset:focus-visible {
-  transform: rotate(180deg);
-  transition: transform 0.25s ease;
-}
-
 .bulk-type-counts {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) 72px;
@@ -387,7 +381,7 @@ input[type="number"]:hover {
 
 .toolbox-toggle {
   min-width: 24px;
-  padding: 4px 6px;
+  padding: 5px 6px 4px;
   font-size: 12px;
   line-height: 1;
 }
@@ -953,7 +947,7 @@ input[type="number"]:hover {
 
 .data-area {
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto 1fr auto;
   gap: 8px;
   min-height: 220px;
   position: relative;
