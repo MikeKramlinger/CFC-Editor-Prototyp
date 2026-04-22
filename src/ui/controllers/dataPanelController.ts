@@ -12,6 +12,9 @@ export interface DataPanelController {
   getDataText: () => string;
 }
 
+const INDENT_SIZE = 2;
+const INDENT_UNIT = " ".repeat(INDENT_SIZE);
+
 const isWordLikeChar = (char: string): boolean => /[A-Za-z0-9_]/.test(char);
 
 const isWhitespace = (char: string): boolean => /\s/.test(char);
@@ -61,6 +64,121 @@ const findNextSelectionBoundary = (text: string, index: number): number => {
   }
 
   return cursor;
+};
+
+const getLineStart = (text: string, index: number): number => {
+  const clampedIndex = Math.max(0, Math.min(index, text.length));
+  return text.lastIndexOf("\n", clampedIndex - 1) + 1;
+};
+
+const getSpacesToNextTabStop = (text: string, caretIndex: number): number => {
+  const lineStart = getLineStart(text, caretIndex);
+  const column = Math.max(0, caretIndex - lineStart);
+  const remainder = column % INDENT_SIZE;
+  return remainder === 0 ? INDENT_SIZE : INDENT_SIZE - remainder;
+};
+
+const getLineRangeForSelection = (
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+): { start: number; end: number } => {
+  const start = getLineStart(text, selectionStart);
+
+  const hasSelection = selectionEnd > selectionStart;
+  const endAnchor = hasSelection && text[selectionEnd - 1] === "\n"
+    ? selectionEnd - 1
+    : selectionEnd;
+  const lineEndBreak = text.indexOf("\n", Math.max(start, endAnchor));
+  const end = lineEndBreak >= 0 ? lineEndBreak : text.length;
+
+  return { start, end };
+};
+
+const replaceTextRange = (
+  textarea: HTMLTextAreaElement,
+  start: number,
+  end: number,
+  replacement: string,
+  fallbackSelectMode: SelectionMode,
+): void => {
+  textarea.setSelectionRange(start, end, "forward");
+
+  const insertedViaCommand = typeof document.execCommand === "function"
+    ? document.execCommand("insertText", false, replacement)
+    : false;
+
+  if (!insertedViaCommand) {
+    textarea.setRangeText(replacement, start, end, fallbackSelectMode);
+  }
+};
+
+const indentSelectedLines = (textarea: HTMLTextAreaElement): void => {
+  const value = textarea.value;
+  const selectionStart = textarea.selectionStart;
+  const selectionEnd = textarea.selectionEnd;
+
+  if (selectionStart === selectionEnd) {
+    const spacesToInsert = getSpacesToNextTabStop(value, selectionStart);
+    replaceTextRange(textarea, selectionStart, selectionEnd, " ".repeat(spacesToInsert), "end");
+    return;
+  }
+
+  const range = getLineRangeForSelection(value, selectionStart, selectionEnd);
+  const selectedBlock = value.slice(range.start, range.end);
+  const lineCount = selectedBlock.length === 0 ? 1 : selectedBlock.split("\n").length;
+  const indented = selectedBlock.split("\n").map((line) => `${INDENT_UNIT}${line}`).join("\n");
+
+  replaceTextRange(textarea, range.start, range.end, indented, "select");
+  const nextStart = selectionStart + INDENT_UNIT.length;
+  const nextEnd = selectionEnd + INDENT_UNIT.length * lineCount;
+  textarea.setSelectionRange(nextStart, nextEnd, "forward");
+};
+
+const outdentSelectedLines = (textarea: HTMLTextAreaElement): void => {
+  const value = textarea.value;
+  const selectionStart = textarea.selectionStart;
+  const selectionEnd = textarea.selectionEnd;
+  const range = getLineRangeForSelection(value, selectionStart, selectionEnd);
+  const selectedBlock = value.slice(range.start, range.end);
+  const lines = selectedBlock.split("\n");
+
+  const removedByLine: number[] = [];
+  const outdented = lines
+    .map((line) => {
+      const leadingSpaces = line.match(/^ +/)?.[0].length ?? 0;
+      const toRemove = Math.min(INDENT_UNIT.length, leadingSpaces);
+      removedByLine.push(toRemove);
+      return line.slice(toRemove);
+    })
+    .join("\n");
+
+  replaceTextRange(textarea, range.start, range.end, outdented, "select");
+
+  const firstLineStart = range.start;
+  const firstRemoved = removedByLine[0] ?? 0;
+
+  if (selectionStart === selectionEnd) {
+    const offsetInLine = selectionStart - firstLineStart;
+    const nextCaret = firstLineStart + Math.max(0, offsetInLine - firstRemoved);
+    textarea.setSelectionRange(nextCaret, nextCaret, "forward");
+    return;
+  }
+
+  const nextStart = Math.max(firstLineStart, selectionStart - Math.min(firstRemoved, selectionStart - firstLineStart));
+  const totalRemoved = removedByLine.reduce((sum, current) => sum + current, 0);
+  const nextEnd = Math.max(nextStart, selectionEnd - totalRemoved);
+  textarea.setSelectionRange(nextStart, nextEnd, "forward");
+};
+
+const insertNewLineWithAutoIndent = (textarea: HTMLTextAreaElement): void => {
+  const value = textarea.value;
+  const selectionStart = textarea.selectionStart;
+  const selectionEnd = textarea.selectionEnd;
+  const lineStart = getLineStart(value, selectionStart);
+  const currentLinePrefix = value.slice(lineStart, selectionStart);
+  const indent = currentLinePrefix.match(/^[ \t]*/)?.[0] ?? "";
+  replaceTextRange(textarea, selectionStart, selectionEnd, `\n${indent}`, "end");
 };
 
 export const createDataPanelController = (options: DataPanelControllerOptions): DataPanelController => {
@@ -132,24 +250,26 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
 
     wordSelectionAnchor = null;
 
-    if (event.key !== "Tab") {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      options.dataText.focus();
+
+      if (event.shiftKey) {
+        outdentSelectedLines(options.dataText);
+      } else {
+        indentSelectedLines(options.dataText);
+      }
+
+      updateLineNumbers();
       return;
     }
 
-    event.preventDefault();
-    options.dataText.focus();
-
-    const insertedViaCommand = typeof document.execCommand === "function"
-      ? document.execCommand("insertText", false, "\t")
-      : false;
-
-    if (!insertedViaCommand) {
-      const start = options.dataText.selectionStart;
-      const end = options.dataText.selectionEnd;
-      options.dataText.setRangeText("\t", start, end, "end");
+    if (event.key === "Enter") {
+      event.preventDefault();
+      options.dataText.focus();
+      insertNewLineWithAutoIndent(options.dataText);
+      updateLineNumbers();
     }
-
-    updateLineNumbers();
   });
 
   options.dataText.addEventListener("pointerdown", () => {
