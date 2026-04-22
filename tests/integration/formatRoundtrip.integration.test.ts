@@ -79,8 +79,8 @@ describe("format roundtrip integration", () => {
 
   it("normalizes edge cases on CFC-DSL deserialize", () => {
     const raw = `cfc LR
-A[X] {o: 2, x: 1, y: 1, w: 4, h: 2}
-B[Y] {o: 1, x: 2, y: 2, w: 5, h: 3}
+A[X] {o: 2, x: 1, y: 1}
+B[Y] {o: 1, x: 2, y: 2}
 
 B.OUT --> A.IN1
 B.OUT --> Z.IN1
@@ -144,8 +144,8 @@ B.OUT --> Z.IN1
 
   it("throws on non-contiguous executionOrder in CFC-DSL", () => {
     const raw = `cfc LR
-N1[A] {o: 1, x: 1, y: 1, w: 6, h: 3}
-N2[B] {o: 3, x: 8, y: 1, w: 6, h: 3}
+N1[A] {o: 1, x: 1, y: 1}
+N2[B] {o: 3, x: 8, y: 1}
 `;
 
     expect(() => cfcDslFormat.deserialize(raw)).toThrow("executionOrder muss durchgängig nummeriert sein");
@@ -296,12 +296,22 @@ N2[B] {o: 3, x: 8, y: 1, w: 6, h: 3}
       createNode("N1", "comment", 0, 0, { label: "Resizable", width: 16, height: 5 }),
     ]);
 
-    for (const adapter of adaptersWithoutOg()) {
+    for (const adapter of adaptersWithoutOg().filter((entry) => entry.id !== "cfc-dsl")) {
       const parsed = adapter.deserialize(adapter.serialize(graph));
       const comment = parsed.nodes.find((node) => node.id === "N1");
       expect(comment).toBeDefined();
       expect(comment!.width).toBe(16);
       expect(comment!.height).toBe(5);
     }
+  });
+
+  it("does not emit explicit width and height in CFC-DSL", () => {
+    const graph = createGraph([
+      createNode("N1", "comment", 0, 0, { label: "Resizable", width: 16, height: 5 }),
+    ]);
+
+    const serialized = cfcDslFormat.serialize(graph);
+    expect(serialized).not.toContain("w:");
+    expect(serialized).not.toContain("h:");
   });
 });

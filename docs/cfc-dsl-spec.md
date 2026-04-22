@@ -14,7 +14,7 @@ Diese DSL ist Mermaid-flowchart-aehnlich, aber auf den CFC-Editor und dessen Dat
 ```text
 cfc LR
 
-<NodeDefinition> {o: <order>, x: <x>, y: <y>, w: <width>, h: <height>}
+<NodeDefinition> {o: <order>, x: <x>, y: <y>}
 ...
 
 <ConnectionDefinition>
@@ -24,19 +24,22 @@ cfc LR
 Regeln:
 - Erste sinnvolle Zeile muss exakt `cfc LR` sein.
 - `o`, `x`, `y` sind verpflichtend.
-- `w`, `h` sind optional, aber fuer stabile Geometrie empfohlen.
+- `w`, `h` werden nicht verwendet.
+- Breite und Hoehe werden implizit bestimmt:
+   - Hoehe folgt dem Node-Typ/Port-Layout.
+   - Breite wird automatisch am Label (und Typ-Kontext) ausgerichtet.
 - Leerzeilen sind erlaubt.
 - Kommentare als ganze Zeile mit `%%` oder `#`.
 
 ## 3. Metadaten
 
 ```text
-{o: 2, x: 10, y: 5, w: 6, h: 3}
+{o: 2, x: 10, y: 5}
 ```
 
 - `o`: executionOrder. `0` bedeutet "nicht explizit gesetzt".
 - `x`, `y`: Rasterposition.
-- `w`, `h`: Knotenbreite/-hoehe.
+- `width`/`height` sind kein Teil der DSL und werden beim Laden berechnet.
 
 Hinweis:
 - Die Validierung fuer `executionOrder` (eindeutig, lueckenlos, etc.) entspricht der bestehenden Graph-Logik.
@@ -130,10 +133,10 @@ Parser-Regeln fuer Pins:
 ```text
 cfc LR
 
-In1[/ "bSensor" /] {o: 0, x: 2, y: 5, w: 5, h: 2}
-Add1[+ADD] {o: 1, x: 10, y: 5, w: 7, h: 6}
-Out1[\ "bMotor" \] {o: 2, x: 20, y: 5, w: 5, h: 2}
-Doc1[/* "Init-Phase" */] {o: 0, x: 2, y: 2, w: 12, h: 2}
+In1[/ "bSensor" /] {o: 0, x: 2, y: 5}
+Add1[+ADD] {o: 1, x: 10, y: 5}
+Out1[\ "bMotor" \] {o: 2, x: 20, y: 5}
+Doc1[/* "Init-Phase" */] {o: 0, x: 2, y: 2}
 
 In1.OUT --> Add1.EN
 Add1.OUT --> Out1.IN1

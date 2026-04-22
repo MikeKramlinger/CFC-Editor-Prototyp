@@ -6,6 +6,7 @@ import {
   type CfcNode,
   type CfcNodeType,
 } from "../model.js";
+import { fitNodeWidthToLabel } from "../core/editor/nodeSizing.js";
 import type { CfcFormatAdapter } from "./types.js";
 import {
   buildOrderedNodesFromRaw,
@@ -17,8 +18,6 @@ interface NodeMetadata {
   o: number;
   x: number;
   y: number;
-  w?: number;
-  h?: number;
 }
 
 interface ParsedNodeDraft {
@@ -69,7 +68,7 @@ const parseMetadata = (raw: string, lineNumber: number): NodeMetadata => {
     const key = (match[1] ?? "").toLowerCase();
     const value = toFiniteNumber(match[2] ?? "0");
 
-    if (key === "o" || key === "x" || key === "y" || key === "w" || key === "h") {
+    if (key === "o" || key === "x" || key === "y") {
       meta[key] = value as never;
       continue;
     }
@@ -85,8 +84,6 @@ const parseMetadata = (raw: string, lineNumber: number): NodeMetadata => {
     o: meta.o,
     x: meta.x,
     y: meta.y,
-    w: meta.w,
-    h: meta.h,
   };
 };
 
@@ -373,9 +370,7 @@ const toMetadataSyntax = (entry: Record<string, unknown>): string => {
   const executionOrder = typeof entry.executionOrder === "number" ? Math.max(1, Math.floor(entry.executionOrder)) : 0;
   const x = typeof entry.x === "number" ? entry.x : 0;
   const y = typeof entry.y === "number" ? entry.y : 0;
-  const w = typeof entry.width === "number" ? entry.width : 0;
-  const h = typeof entry.height === "number" ? entry.height : 0;
-  return `{o: ${executionOrder}, x: ${x}, y: ${y}, w: ${w}, h: ${h}}`;
+  return `{o: ${executionOrder}, x: ${x}, y: ${y}}`;
 };
 
 const toConnectionEndpointSyntax = (
@@ -429,16 +424,14 @@ const parseDslGraph = (raw: string): CfcGraph => {
 
   const nodesRaw = nodeDrafts.map((draft) => {
     const template = getNodeTemplateByType(draft.type);
-    const width = Math.max(template.width, typeof draft.metadata.w === "number" ? draft.metadata.w : template.width);
-    const height = Math.max(template.height, typeof draft.metadata.h === "number" ? draft.metadata.h : template.height);
     const entry: Record<string, unknown> = {
       id: draft.id,
       type: draft.type,
       label: draft.label,
       x: draft.metadata.x,
       y: draft.metadata.y,
-      width,
-      height,
+      width: template.width,
+      height: template.height,
     };
 
     if (draft.metadata.o > 0) {
@@ -449,6 +442,9 @@ const parseDslGraph = (raw: string): CfcGraph => {
   });
 
   graph.nodes = buildOrderedNodesFromRaw(nodesRaw);
+  graph.nodes.forEach((node) => {
+    fitNodeWidthToLabel(node);
+  });
 
   const nodeIds = new Set(graph.nodes.map((node) => node.id));
   const nodeTypeById = new Map(graph.nodes.map((node) => [node.id, node.type]));
