@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { getAdapterById, listAdapters } from "../../src/formats/registry.js";
 import { getNodeTemplateByType } from "../../src/model.js";
 import { createGraph, createNode, createConnection } from "../unit/helpers.js";
+import { cfcDslFormat } from "../../src/formats/cfcDsl.js";
 import { jsonFormat } from "../../src/formats/json.js";
-import { yamlFormat } from "../../src/formats/yaml.js";
 
 const createReferenceGraph = () => {
   const nodes = [
@@ -77,40 +77,18 @@ describe("format roundtrip integration", () => {
     expect(graph.connections[0]).toMatchObject({ fromPort: "output:0", toPort: "input:0" });
   });
 
-  it("normalizes edge cases on YAML deserialize", () => {
-    const raw = `version: "3.0"
-nodes:
-  - id: A
-    label: X
-    executionOrder: 2
-    x: 1
-    y: 1
-    width: 4
-    height: 2
-  - id: B
-    type: box
-    label: Y
-    executionOrder: 1
-    x: 2
-    y: 2
-    width: 5
-    height: 3
-connections:
-  - id: C1
-    fromNodeId: B
-    fromPort: output
-    toNodeId: A
-    toPort: input
-  - id: C2
-    fromNodeId: B
-    fromPort: output:0
-    toNodeId: Z
-    toPort: input:0
+  it("normalizes edge cases on CFC-DSL deserialize", () => {
+    const raw = `cfc LR
+A[X] {o: 2, x: 1, y: 1, w: 4, h: 2}
+B[Y] {o: 1, x: 2, y: 2, w: 5, h: 3}
+
+B.OUT --> A.IN1
+B.OUT --> Z.IN1
 `;
 
-    const graph = yamlFormat.deserialize(raw);
+    const graph = cfcDslFormat.deserialize(raw);
 
-    expect(graph.version).toBe("3.0");
+    expect(graph.version).toBe("1.0");
     expect(graph.nodes[0]?.id).toBe("B");
     expect(graph.connections).toHaveLength(1);
     expect(graph.connections[0]).toMatchObject({ fromPort: "output:0", toPort: "input:0" });
@@ -164,29 +142,13 @@ connections:
     expect(message).toContain("executionOrder bereits belegt");
   });
 
-  it("throws on non-contiguous executionOrder in YAML", () => {
-    const raw = `version: "1.0"
-nodes:
-  - id: N1
-    type: box
-    label: A
-    executionOrder: 1
-    x: 1
-    y: 1
-    width: 6
-    height: 3
-  - id: N2
-    type: box
-    label: B
-    executionOrder: 3
-    x: 8
-    y: 1
-    width: 6
-    height: 3
-connections:
+  it("throws on non-contiguous executionOrder in CFC-DSL", () => {
+    const raw = `cfc LR
+N1[A] {o: 1, x: 1, y: 1, w: 6, h: 3}
+N2[B] {o: 3, x: 8, y: 1, w: 6, h: 3}
 `;
 
-    expect(() => yamlFormat.deserialize(raw)).toThrow("executionOrder muss durchgängig nummeriert sein");
+    expect(() => cfcDslFormat.deserialize(raw)).toThrow("executionOrder muss durchgängig nummeriert sein");
   });
 
   it("throws on duplicate id and executionOrder in PLCopenXML node list", () => {

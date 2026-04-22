@@ -21,7 +21,9 @@ Interaktiver CFC-Editor für die Masterarbeit mit Fokus auf visuelles Modelliere
 
 - PLCopenXML
 - JSON
-- YAML
+- CFC-DSL
+
+Die CFC-DSL-Spezifikation ist in `docs/cfc-dsl-spec.md` dokumentiert.
 
 Die Adapter werden über `src/formats/registry.ts` registriert.
 
