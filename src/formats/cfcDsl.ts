@@ -47,6 +47,20 @@ const decodeEscapedQuotedText = (raw: string): string => {
   }
 };
 
+const parseMaybeQuotedText = (raw: string): string => {
+  const trimmed = raw.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return decodeEscapedQuotedText(trimmed.slice(1, -1));
+  }
+  return trimmed;
+};
+
+const quoteIfNeeded = (value: string, forbiddenFragments: string[]): string => {
+  const hasBoundarySpaces = value !== value.trim();
+  const needsQuoting = hasBoundarySpaces || forbiddenFragments.some((fragment) => fragment.length > 0 && value.includes(fragment));
+  return needsQuoting ? JSON.stringify(value) : value;
+};
+
 const toFiniteNumber = (value: string): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -88,14 +102,24 @@ const parseMetadata = (raw: string, lineNumber: number): NodeMetadata => {
 };
 
 const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, "id" | "metadata" | "lineNumber"> => {
-  let match = body.match(/^\[\/\s*"((?:\\.|[^"\\])*)"\s*\/\]$/);
+  let match = body.match(/^\[\/\*\s*([\s\S]*?)\s*\*\/\]$/);
   if (match) {
-    return { type: "input", label: decodeEscapedQuotedText(match[1] ?? "") };
+    return { type: "comment", label: parseMaybeQuotedText(match[1] ?? "") };
   }
 
-  match = body.match(/^\[\\\s*"((?:\\.|[^"\\])*)"\s*\\\]$/);
+  match = body.match(/^\[\*\s*([\s\S]*?)\s*\*\]$/);
   if (match) {
-    return { type: "output", label: decodeEscapedQuotedText(match[1] ?? "") };
+    return { type: "comment", label: parseMaybeQuotedText(match[1] ?? "") };
+  }
+
+  match = body.match(/^\[\/\s*([\s\S]*?)\s*\/\]$/);
+  if (match) {
+    return { type: "input", label: parseMaybeQuotedText(match[1] ?? "") };
+  }
+
+  match = body.match(/^\[\\\s*([\s\S]*?)\s*\\\]$/);
+  if (match) {
+    return { type: "output", label: parseMaybeQuotedText(match[1] ?? "") };
   }
 
   match = body.match(/^\[\+([^\]]+)\]$/);
@@ -103,23 +127,23 @@ const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, 
     return { type: "box-en-eno", label: (match[1] ?? "").trim() };
   }
 
-  match = body.match(/^\(\s*"((?:\\.|[^"\\])*)"\s*\)$/);
+  match = body.match(/^\{\{\s*([\s\S]*?)\s*\}\}$/);
   if (match) {
-    return { type: "jump", label: decodeEscapedQuotedText(match[1] ?? "") };
+    return { type: "label", label: parseMaybeQuotedText(match[1] ?? "") };
   }
 
-  match = body.match(/^\{\{\s*"((?:\\.|[^"\\])*)"\s*\}\}$/);
+  match = body.match(/^\{\s*([\s\S]*?)\s*\}$/);
   if (match) {
-    return { type: "label", label: decodeEscapedQuotedText(match[1] ?? "") };
-  }
-
-  match = body.match(/^\{\s*"((?:\\.|[^"\\])*)"\s*\}$/);
-  if (match) {
-    return { type: "label", label: decodeEscapedQuotedText(match[1] ?? "") };
+    return { type: "label", label: parseMaybeQuotedText(match[1] ?? "") };
   }
 
   if (/^\(\(\s*RETURN\s*\)\)$/i.test(body)) {
     return { type: "return", label: "RETURN" };
+  }
+
+  match = body.match(/^\(\s*([\s\S]*?)\s*\)$/);
+  if (match) {
+    return { type: "jump", label: parseMaybeQuotedText(match[1] ?? "") };
   }
 
   match = body.match(/^\[\[\s*([CS])\s*:\s*([^\]]+)\]\]$/i);
@@ -131,22 +155,17 @@ const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, 
     };
   }
 
-  match = body.match(/^\[\/\*\s*"((?:\\.|[^"\\])*)"\s*\*\/\]$/);
+  match = body.match(/^>\s*([\s\S]*?)\s*\]$/);
   if (match) {
-    return { type: "comment", label: decodeEscapedQuotedText(match[1] ?? "") };
+    return { type: "connection-mark-source", label: parseMaybeQuotedText(match[1] ?? "") };
   }
 
-  match = body.match(/^>\s*"((?:\\.|[^"\\])*)"\]$/);
+  match = body.match(/^\[\s*([\s\S]*?)\s*<$/);
   if (match) {
-    return { type: "connection-mark-source", label: decodeEscapedQuotedText(match[1] ?? "") };
+    return { type: "connection-mark-sink", label: parseMaybeQuotedText(match[1] ?? "") };
   }
 
-  match = body.match(/^\[\s*"((?:\\.|[^"\\])*)"\s*<$/);
-  if (match) {
-    return { type: "connection-mark-sink", label: decodeEscapedQuotedText(match[1] ?? "") };
-  }
-
-  match = body.match(/^\[\[\s*T\s*:\s*([a-z0-9-]+)\s*\|\s*"((?:\\.|[^"\\])*)"\s*\]\]$/i);
+  match = body.match(/^\[\[\s*T\s*:\s*([a-z0-9-]+)\s*\|\s*([\s\S]*?)\s*\]\]$/i);
   if (match) {
     const typeRaw = (match[1] ?? "").toLowerCase();
     if (!isCfcNodeType(typeRaw)) {
@@ -154,7 +173,7 @@ const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, 
     }
     return {
       type: typeRaw,
-      label: decodeEscapedQuotedText(match[2] ?? ""),
+      label: parseMaybeQuotedText(match[2] ?? ""),
     };
   }
 
@@ -330,22 +349,20 @@ const toPinName = (index: number, kind: "input" | "output", nodeType: CfcNodeTyp
   return `OUT${index + 1}`;
 };
 
-const quote = (value: string): string => JSON.stringify(value);
-
 const toNodeSyntax = (node: CfcNode): string => {
   switch (node.type) {
     case "input":
-      return `${node.id}[/ ${quote(node.label)} /]`;
+      return `${node.id}[/ ${quoteIfNeeded(node.label, ["/]"])} /]`;
     case "output":
-      return `${node.id}[\\ ${quote(node.label)} \\]`;
+      return `${node.id}[\\ ${quoteIfNeeded(node.label, ["\\]"])} \\]`;
     case "box":
       return `${node.id}[${node.label}]`;
     case "box-en-eno":
       return `${node.id}[+${node.label}]`;
     case "jump":
-      return `${node.id}(${quote(node.label)})`;
+      return `${node.id}(${quoteIfNeeded(node.label, [")"])})`;
     case "label":
-      return `${node.id}{{ ${quote(node.label)} }}`;
+      return `${node.id}{{ ${quoteIfNeeded(node.label, ["}}", "}"])} }}`;
     case "return":
       return `${node.id}(( RETURN ))`;
     case "composer":
@@ -353,16 +370,16 @@ const toNodeSyntax = (node: CfcNode): string => {
     case "selector":
       return `${node.id}[[S: ${node.label}]]`;
     case "comment":
-      return `${node.id}[/* ${quote(node.label)} */]`;
+      return `${node.id}[* ${quoteIfNeeded(node.label, ["*]"])} *]`;
     case "connection-mark-source":
-      return `${node.id}>${quote(node.label)}]`;
+      return `${node.id}>${quoteIfNeeded(node.label, ["]"])}]`;
     case "connection-mark-sink":
-      return `${node.id}[${quote(node.label)}<`;
+      return `${node.id}[${quoteIfNeeded(node.label, ["<"])}<`;
     case "input-pin":
     case "output-pin":
-      return `${node.id}[[T: ${node.type} | ${quote(node.label)}]]`;
+      return `${node.id}[[T: ${node.type} | ${quoteIfNeeded(node.label, ["]]"])}]]`;
     default:
-      return `${node.id}[[T: ${node.type} | ${quote(node.label)}]]`;
+      return `${node.id}[[T: ${node.type} | ${quoteIfNeeded(node.label, ["]]"])}]]`;
   }
 };
 

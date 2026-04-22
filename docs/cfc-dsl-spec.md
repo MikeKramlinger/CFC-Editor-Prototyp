@@ -8,6 +8,7 @@ Diese DSL ist Mermaid-flowchart-aehnlich, aber auf den CFC-Editor und dessen Dat
 - Knoten-Syntax ist kompakt und visuell lesbar.
 - Jede Knotenzeile enthaelt einen Metadatenblock fuer Position und Ausfuehrungsreihenfolge.
 - Verbindungen werden per Pfeil `-->` notiert.
+- Texte werden standardmässig ohne Anfuehrungszeichen geschrieben.
 
 ## 2. Grundstruktur
 
@@ -30,6 +31,7 @@ Regeln:
    - Breite wird automatisch am Label (und Typ-Kontext) ausgerichtet.
 - Leerzeilen sind erlaubt.
 - Kommentare als ganze Zeile mit `%%` oder `#`.
+- Quoted Schreibweise bleibt aus Kompatibilitaetsgruenden erlaubt, ist aber optional.
 
 ## 3. Metadaten
 
@@ -47,12 +49,12 @@ Hinweis:
 ## 4. Knoten (12 CFC-Bestandteile)
 
 1. Input
-   - Syntax: `id[/ "Variablenname" /]`
-   - Beispiel: `In1[/ "bSensor" /] {o: 0, x: 2, y: 5}`
+   - Syntax: `id[/ Variablenname /]`
+   - Beispiel: `In1[/ bSensor /] {o: 0, x: 2, y: 5}`
 
 2. Output
-   - Syntax: `id[\ "Variablenname" \]`
-   - Beispiel: `Out1[\ "bMotor" \] {o: 1, x: 20, y: 5}`
+   - Syntax: `id[\ Variablenname \]`
+   - Beispiel: `Out1[\ bMotor \] {o: 1, x: 20, y: 5}`
 
 3. Box
    - Syntax: `id[Typ: Instanzname]` oder `id[Typ]`
@@ -63,12 +65,12 @@ Hinweis:
    - Beispiel: `Add1[+ADD] {o: 3, x: 15, y: 10}`
 
 5. Jump
-   - Syntax: `id("Labelname")`
-   - Beispiel: `JmpErr("ErrorRoutine") {o: 4, x: 30, y: 10}`
+   - Syntax: `id(Labelname)`
+   - Beispiel: `JmpErr(ErrorRoutine) {o: 4, x: 30, y: 10}`
 
 6. Label
-   - Syntax: `id{{ "Labelname" }}`
-   - Beispiel: `LblErr{{ "ErrorRoutine" }} {o: 0, x: 2, y: 20}`
+   - Syntax: `id{{ Labelname }}`
+   - Beispiel: `LblErr{{ ErrorRoutine }} {o: 0, x: 2, y: 20}`
 
 7. Return
    - Syntax: `id(( RETURN ))`
@@ -83,16 +85,16 @@ Hinweis:
    - Beispiel: `Sel1[[S: stMotorData]] {o: 7, x: 5, y: 25}`
 
 10. Comment
-    - Syntax: `id[/* "Kommentartext" */]`
-    - Beispiel: `Doc1[/* "Hier startet die Init-Phase" */] {o: 0, x: 2, y: 2}`
+   - Syntax: `id[* Kommentartext *]`
+   - Beispiel: `Doc1[* Hier startet die Init-Phase *] {o: 0, x: 2, y: 2}`
 
 11. Connection Mark - Source
-    - Syntax: `id>"Markenname"]`
-    - Beispiel: `MarkOut1>"ToPhase2"] {o: 0, x: 30, y: 5}`
+   - Syntax: `id>Markenname]`
+   - Beispiel: `MarkOut1>ToPhase2] {o: 0, x: 30, y: 5}`
 
 12. Connection Mark - Sink
-    - Syntax: `id["Markenname"<`
-    - Beispiel: `MarkIn1["ToPhase2"< {o: 0, x: 2, y: 30}`
+   - Syntax: `id[Markenname<`
+   - Beispiel: `MarkIn1[ToPhase2< {o: 0, x: 2, y: 30}`
 
 ## 5. Verbindungen und Pin-Adressierung
 
@@ -133,14 +135,21 @@ Parser-Regeln fuer Pins:
 ```text
 cfc LR
 
-In1[/ "bSensor" /] {o: 0, x: 2, y: 5}
+In1[/ bSensor /] {o: 0, x: 2, y: 5}
 Add1[+ADD] {o: 1, x: 10, y: 5}
-Out1[\ "bMotor" \] {o: 2, x: 20, y: 5}
-Doc1[/* "Init-Phase" */] {o: 0, x: 2, y: 2}
+Out1[\ bMotor \] {o: 2, x: 20, y: 5}
+Doc1[* Init-Phase *] {o: 0, x: 2, y: 2}
 
 In1.OUT --> Add1.EN
 Add1.OUT --> Out1.IN1
 ```
+
+## 6.1 Kompatibilitaet (alt -> neu)
+
+- Die folgenden aelteren Formen werden weiterhin akzeptiert:
+   - Quoted Texte, z. B. `In1[/ "GVL.bSensor" /]`
+   - Kommentar in C-Stil, z. B. `Doc1[/* Text */]`
+- Der Serializer erzeugt standardmaessig die kompaktere unquoted Form.
 
 ## 7. Mermaid-Bezug und Abgrenzung
 

@@ -151,6 +151,32 @@ N2[B] {o: 3, x: 8, y: 1}
     expect(() => cfcDslFormat.deserialize(raw)).toThrow("executionOrder muss durchgängig nummeriert sein");
   });
 
+  it("supports unquoted text syntax and legacy comment syntax in CFC-DSL", () => {
+    const raw = `cfc LR
+In1[/ GVL.bSensor /] {o: 0, x: 1, y: 1}
+J1(ErrorRoutine) {o: 1, x: 8, y: 1}
+L1{{ ErrorRoutine }} {o: 0, x: 1, y: 5}
+DocNew[* Hier startet die Init-Phase *] {o: 0, x: 1, y: 7}
+DocOld[/* Legacy Kommentar */] {o: 0, x: 1, y: 9}
+MOut>ToPhase2] {o: 0, x: 12, y: 1}
+MIn[ToPhase2< {o: 0, x: 1, y: 11}
+
+In1.OUT --> MOut
+MIn --> J1.IN1
+`;
+
+    const graph = cfcDslFormat.deserialize(raw);
+
+    expect(graph.nodes.some((node) => node.type === "input" && node.label === "GVL.bSensor")).toBe(true);
+    expect(graph.nodes.some((node) => node.type === "jump" && node.label === "ErrorRoutine")).toBe(true);
+    expect(graph.nodes.some((node) => node.type === "label" && node.label === "ErrorRoutine")).toBe(true);
+    expect(graph.nodes.some((node) => node.type === "comment" && node.label === "Hier startet die Init-Phase")).toBe(true);
+    expect(graph.nodes.some((node) => node.type === "comment" && node.label === "Legacy Kommentar")).toBe(true);
+    expect(graph.nodes.some((node) => node.type === "connection-mark-source" && node.label === "ToPhase2")).toBe(true);
+    expect(graph.nodes.some((node) => node.type === "connection-mark-sink" && node.label === "ToPhase2")).toBe(true);
+    expect(graph.connections.length).toBe(2);
+  });
+
   it("throws on duplicate id and executionOrder in PLCopenXML node list", () => {
     const raw = `<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://www.plcopen.org/xml/tc6_0200">
