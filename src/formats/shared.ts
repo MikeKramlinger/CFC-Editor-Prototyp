@@ -6,6 +6,7 @@ import {
   type CfcGraph,
   type CfcNode,
 } from "../model.js";
+import { fitNodeWidthToLabel } from "../core/editor/nodeSizing.js";
 import { getExecutionOrderByNodeId, isExecutionOrderedNode } from "../core/graph/executionOrder.js";
 
 export const toFiniteNumber = (value: unknown, fallback = 0): number => {
@@ -64,19 +65,21 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
   const template = getNodeTemplateByType(type);
   const hasExplicitExecutionOrder = Object.prototype.hasOwnProperty.call(entry, "executionOrder");
   const executionOrder = Math.max(1, Math.floor(toFiniteNumber(entry.executionOrder, index + 1)));
-  const width = Math.max(template.width, toFiniteNumber(entry.width, template.width));
-  const height = Math.max(template.height, toFiniteNumber(entry.height, template.height));
+  const node: CfcNode = {
+    id: toStringValue(entry.id, `N${index + 1}`),
+    type,
+    label: toStringValue(entry.label, "Block"),
+    x: toFiniteNumber(entry.x),
+    y: toFiniteNumber(entry.y),
+    width: template.width,
+    height: template.height,
+  };
+
+  // Keep geometry internal and derive width automatically from label/type.
+  fitNodeWidthToLabel(node);
 
   return {
-    node: {
-      id: toStringValue(entry.id, `N${index + 1}`),
-      type,
-      label: toStringValue(entry.label, "Block"),
-      x: toFiniteNumber(entry.x),
-      y: toFiniteNumber(entry.y),
-      width,
-      height,
-    },
+    node,
     executionOrder,
     hasExplicitExecutionOrder,
     sourceIndex: index,
@@ -191,17 +194,12 @@ export const toExecutionOrderedSerializableGraph = (
   return {
     version: graph.version,
     nodes: graph.nodes.map((node) => {
-      const template = getNodeTemplateByType(node.type);
-      const width = Math.max(template.width, toFiniteNumber(node.width, template.width));
-      const height = Math.max(template.height, toFiniteNumber(node.height, template.height));
       const entry: Record<string, unknown> = {
         id: node.id,
         type: node.type,
         label: node.label,
         x: node.x,
         y: node.y,
-        width,
-        height,
       };
       if (isExecutionOrderedNode(node)) {
         const executionOrder = getExecutionOrderByNodeId(graph.nodes, node.id);

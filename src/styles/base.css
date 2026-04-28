@@ -535,7 +535,7 @@ input[type="number"]:hover {
   background: var(--node-bg);
   min-width: 120px;
   min-height: 24px;
-  padding: 4px 8px;
+  padding: 4px 16px;
   cursor: move;
   user-select: none;
   overflow: visible;
@@ -777,12 +777,14 @@ input[type="number"]:hover {
 .cfc-node__title {
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .cfc-node__id {
   margin-top: 0;
   color: #5f6673;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .cfc-node__order {

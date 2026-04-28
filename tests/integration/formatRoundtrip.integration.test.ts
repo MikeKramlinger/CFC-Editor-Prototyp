@@ -111,7 +111,7 @@ B.OUT --> Z.IN1
 <project xmlns="http://www.plcopen.org/xml/tc6_0200">
   <cfcEditor version="1.0">
     <nodes>
-      <node id="N1" type="boxa" label="Bad" x="2" y="4" width="5" height="2"/>
+      <node id="N1" type="boxa" label="Bad" x="2" y="4"/>
     </nodes>
     <connections/>
   </cfcEditor>
@@ -182,9 +182,9 @@ MIn --> J1.IN1
 <project xmlns="http://www.plcopen.org/xml/tc6_0200">
   <cfcEditor version="1.0">
     <nodes>
-      <node id="N1" type="input" label="In" x="2" y="4" width="5" height="2"/>
-      <node id="N2" type="output" label="Out" executionOrder="1" x="28" y="4" width="5" height="2"/>
-      <node id="N2" type="box" label="Out" executionOrder="1" x="12" y="8" width="5" height="2"/>
+      <node id="N1" type="input" label="In" x="2" y="4"/>
+      <node id="N2" type="output" label="Out" executionOrder="1" x="28" y="4"/>
+      <node id="N2" type="box" label="Out" executionOrder="1" x="12" y="8"/>
     </nodes>
     <connections/>
   </cfcEditor>
@@ -317,7 +317,7 @@ MIn --> J1.IN1
     }
   });
 
-  it("preserves resized comment geometry across adapters except OGPLCopenXML", () => {
+  it("does not persist explicit comment geometry in text formats", () => {
     const graph = createGraph([
       createNode("N1", "comment", 0, 0, { label: "Resizable", width: 16, height: 5 }),
     ]);
@@ -326,18 +326,32 @@ MIn --> J1.IN1
       const parsed = adapter.deserialize(adapter.serialize(graph));
       const comment = parsed.nodes.find((node) => node.id === "N1");
       expect(comment).toBeDefined();
-      expect(comment!.width).toBe(16);
-      expect(comment!.height).toBe(5);
+      const template = getNodeTemplateByType("comment");
+      expect(comment!.width).toBeGreaterThanOrEqual(template.width);
+      expect(comment!.height).toBe(template.height);
+      expect(comment!.height).not.toBe(5);
     }
   });
 
-  it("does not emit explicit width and height in CFC-DSL", () => {
+  it("does not emit explicit width and height in textual formats", () => {
     const graph = createGraph([
       createNode("N1", "comment", 0, 0, { label: "Resizable", width: 16, height: 5 }),
     ]);
 
-    const serialized = cfcDslFormat.serialize(graph);
-    expect(serialized).not.toContain("w:");
-    expect(serialized).not.toContain("h:");
+    const dslSerialized = cfcDslFormat.serialize(graph);
+    expect(dslSerialized).not.toContain("w:");
+    expect(dslSerialized).not.toContain("h:");
+
+    const jsonSerialized = jsonFormat.serialize(graph);
+    expect(jsonSerialized).not.toContain('"width"');
+    expect(jsonSerialized).not.toContain('"height"');
+
+    const plcopenSerialized = getAdapterById("plcopen-xml").serialize(graph);
+    expect(plcopenSerialized).not.toContain(" width=");
+    expect(plcopenSerialized).not.toContain(" height=");
+
+    const ogSerialized = getAdapterById("og-plcopen-xml").serialize(graph);
+    expect(ogSerialized).not.toContain(" width=");
+    expect(ogSerialized).not.toContain(" height=");
   });
 });

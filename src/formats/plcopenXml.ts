@@ -1,7 +1,6 @@
 import {
   DEFAULT_NODE_TYPE,
   createEmptyGraph,
-  getNodeTemplateByType,
   type CfcGraph,
 } from "../model.js";
 import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
@@ -68,7 +67,6 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     const nodes = documentRoot.createElementNS(NAMESPACE, "nodes");
     let executionOrder = 1;
     graph.nodes.forEach((node) => {
-      const template = getNodeTemplateByType(node.type);
       const nodeElement = documentRoot.createElementNS(NAMESPACE, "node");
       nodeElement.setAttribute("id", node.id);
       nodeElement.setAttribute("type", node.type);
@@ -79,8 +77,6 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
       }
       nodeElement.setAttribute("x", String(node.x));
       nodeElement.setAttribute("y", String(node.y));
-      nodeElement.setAttribute("width", String(Math.max(template.width, node.width)));
-      nodeElement.setAttribute("height", String(Math.max(template.height, node.height)));
       nodes.append(nodeElement);
     });
 
@@ -123,8 +119,6 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
         label: nodeElement.getAttribute("label") ?? "Block",
         x: parseNumberAttr(nodeElement, "x"),
         y: parseNumberAttr(nodeElement, "y"),
-        width: parseNumberAttr(nodeElement, "width"),
-        height: parseNumberAttr(nodeElement, "height"),
       };
       if (nodeElement.hasAttribute("executionOrder")) {
         nodeRaw.executionOrder = Math.max(1, Math.floor(parseNumberAttr(nodeElement, "executionOrder", sourceIndex + 1)));

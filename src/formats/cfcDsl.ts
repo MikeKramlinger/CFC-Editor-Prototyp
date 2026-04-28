@@ -1,12 +1,10 @@
 import {
   createEmptyGraph,
-  getNodeTemplateByType,
   isCfcNodeType,
   type CfcGraph,
   type CfcNode,
   type CfcNodeType,
 } from "../model.js";
-import { fitNodeWidthToLabel } from "../core/editor/nodeSizing.js";
 import type { CfcFormatAdapter } from "./types.js";
 import {
   buildOrderedNodesFromRaw,
@@ -440,15 +438,12 @@ const parseDslGraph = (raw: string): CfcGraph => {
   }
 
   const nodesRaw = nodeDrafts.map((draft) => {
-    const template = getNodeTemplateByType(draft.type);
     const entry: Record<string, unknown> = {
       id: draft.id,
       type: draft.type,
       label: draft.label,
       x: draft.metadata.x,
       y: draft.metadata.y,
-      width: template.width,
-      height: template.height,
     };
 
     if (draft.metadata.o > 0) {
@@ -459,9 +454,6 @@ const parseDslGraph = (raw: string): CfcGraph => {
   });
 
   graph.nodes = buildOrderedNodesFromRaw(nodesRaw);
-  graph.nodes.forEach((node) => {
-    fitNodeWidthToLabel(node);
-  });
 
   const nodeIds = new Set(graph.nodes.map((node) => node.id));
   const nodeTypeById = new Map(graph.nodes.map((node) => [node.id, node.type]));

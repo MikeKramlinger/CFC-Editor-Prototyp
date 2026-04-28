@@ -254,8 +254,8 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
         label,
         x: position.x,
         y: position.y,
-        width: parseNumberAttr(element, "width", template.width),
-        height: parseNumberAttr(element, "height", template.height),
+        width: template.width,
+        height: template.height,
       },
     };
   }
@@ -601,8 +601,6 @@ export const ogPlcopenXmlFormat: CfcFormatAdapter = {
       if (node.type === "comment") {
         const comment = doc.createElementNS(NAMESPACE, "comment");
         comment.setAttribute("localId", localId);
-        comment.setAttribute("height", String(template.height));
-        comment.setAttribute("width", String(template.width));
         appendPosition(doc, comment, node.x, node.y);
         const content = doc.createElementNS(NAMESPACE, "content");
         const xhtml = doc.createElementNS("http://www.w3.org/1999/xhtml", "xhtml");
