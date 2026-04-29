@@ -1,5 +1,6 @@
 import { CfcEditor } from "./editor.js";
 import { getNextSerialForPrefix } from "./core/editor/id.js";
+import { getStoredLanguage, storeLanguage, t, type UiLanguage } from "./i18n.js";
 import { getAdapterById, listAdapters } from "./formats/registry.js";
 import { createQuizPersistence, type QuizAttemptRecord, type QuizSessionExport } from "./quiz/persistence.js";
 import { SAMPLE_QUIZ_TASKS } from "./quiz/sampleQuiz.js";
@@ -16,11 +17,13 @@ import { installDataAreaResize } from "./ui/behaviors/dataAreaResize.js";
 import { createDataPanelController } from "./ui/controllers/dataPanelController.js";
 import { installKeyboardShortcutsController } from "./ui/controllers/keyboardShortcutsController.js";
 import { createParticipantNameDialogController } from "./ui/controllers/participantNameDialogController.js";
+import { createQuizAbortDialogController } from "./ui/controllers/quizAbortDialogController.js";
 import { createToolbarController } from "./ui/controllers/toolbarController.js";
 import { createToolboxController } from "./ui/controllers/toolboxController.js";
 import { getDataPanelUiElements } from "./ui/views/dataPanelUi.js";
 import { query } from "./ui/views/domQueryUi.js";
 import { getParticipantNameDialogUiElements } from "./ui/views/participantNameDialogUi.js";
+import { getQuizAbortDialogUiElements } from "./ui/views/quizAbortDialogUi.js";
 import { getToolbarUiElements } from "./ui/views/toolbarUi.js";
 import { getToolboxUiElements } from "./ui/views/toolboxUi.js";
 import {
@@ -36,12 +39,14 @@ import {
 } from "./model.js";
 
 const canvas = query<HTMLDivElement>("#canvas");
+const languageToggleButton = query<HTMLButtonElement>("#language-toggle");
 const graphStage = query<HTMLDivElement>("#graph-stage");
 const toolbarSection = query<HTMLElement>(".toolbar");
 const toolbarUi = getToolbarUiElements();
 const toolboxUi = getToolboxUiElements();
 const dataPanelUi = getDataPanelUiElements();
 const participantNameDialogUi = getParticipantNameDialogUiElements();
+const quizAbortDialogUi = getQuizAbortDialogUiElements();
 const dataArea = query<HTMLElement>(".data-area");
 const dataEditor = query<HTMLDivElement>(".data-editor");
 const dataResizer = query<HTMLDivElement>("#data-resizer");
@@ -103,10 +108,17 @@ let quizPreviewResizeStartX = 0;
 let quizPreviewResizeStartWidth = 0;
 let quizTasks: QuizTask[] = [...SAMPLE_QUIZ_TASKS];
 let quizTaskFormatByTaskId = new Map<string, string>();
+const getInitialLanguage = (): UiLanguage => getStoredLanguage() ?? "en";
+let currentLanguage: UiLanguage = getInitialLanguage();
 let quizSession = createQuizSession({ tasks: quizTasks });
 const quizPersistence = createQuizPersistence();
 const participantNameDialog = createParticipantNameDialogController({
   ui: participantNameDialogUi,
+  getFallbackPromptText: () => t(currentLanguage, "participantDialogPromptFallback"),
+});
+const quizAbortDialog = createQuizAbortDialogController({
+  ui: quizAbortDialogUi,
+  getFallbackConfirmText: () => t(currentLanguage, "quizAbortConfirm"),
 });
 
 const readTextFromFile = (file: File): Promise<string> => {
@@ -131,7 +143,7 @@ const isQuizTaskSessionState = (value: unknown): value is QuizTaskSessionState =
 const parseQuizSessionExport = (raw: string): QuizSessionExport => {
   const parsed = JSON.parse(raw) as Partial<QuizSessionExport>;
   if (parsed.format !== "cfc-quiz-session-v1") {
-    throw new Error("Unbekanntes Dateiformat (erwartet: cfc-quiz-session-v1).");
+    throw new Error(t(currentLanguage, "quizReportFormatUnknown"));
   }
 
   const tasks = Array.isArray(parsed.tasks) ? parsed.tasks.filter(Boolean) as QuizTask[] : [];
@@ -246,12 +258,62 @@ const createQuizTaskPlanForAdapters = (tasks: QuizTask[], adaptersForPlan: Array
   };
 };
 
+const getQuizTaskBaseId = (task: QuizTask): string => {
+  const separatorIndex = task.id.indexOf("::");
+  return separatorIndex >= 0 ? task.id.slice(separatorIndex + 2) : task.id;
+};
+
+const getQuizTaskFormatLabel = (task: QuizTask): string | null => {
+  const formatId = quizTaskFormatByTaskId.get(task.id);
+  if (!formatId) {
+    return null;
+  }
+
+  return adapterLabelById.get(formatId) ?? formatId;
+};
+
+const getLocalizedQuizTaskTitle = (task: QuizTask): string => {
+  switch (getQuizTaskBaseId(task)) {
+    case "task-add-box-position":
+      return t(currentLanguage, "quizTaskAddBoxPositionTitle");
+    case "task-connect-input-box":
+      return t(currentLanguage, "quizTaskConnectInputBoxTitle");
+    case "task-clean-graph":
+      return t(currentLanguage, "quizTaskCleanGraphTitle");
+    case "task-open-question-reasoning":
+      return t(currentLanguage, "quizTaskOpenReasoningTitle");
+    default:
+      return task.title;
+  }
+};
+
+const getLocalizedQuizTaskDisplayTitle = (task: QuizTask): string => {
+  const localizedTitle = getLocalizedQuizTaskTitle(task);
+  const formatLabel = getQuizTaskFormatLabel(task);
+  return formatLabel ? `${localizedTitle} [${formatLabel}]` : localizedTitle;
+};
+
+const getLocalizedQuizTaskDescription = (task: QuizTask): string => {
+  switch (getQuizTaskBaseId(task)) {
+    case "task-add-box-position":
+      return t(currentLanguage, "quizTaskAddBoxPositionDescription");
+    case "task-connect-input-box":
+      return t(currentLanguage, "quizTaskConnectInputBoxDescription");
+    case "task-clean-graph":
+      return t(currentLanguage, "quizTaskCleanGraphDescription");
+    case "task-open-question-reasoning":
+      return t(currentLanguage, "quizTaskOpenReasoningDescription");
+    default:
+      return task.description;
+  }
+};
+
 const rebuildQuizTaskSelectOptions = (): void => {
   quizTaskSelect.replaceChildren();
   quizSession.getTasks().forEach((task, index) => {
     const option = document.createElement("option");
     option.value = String(index);
-    option.textContent = `${index + 1}. ${task.title}`;
+    option.textContent = `${index + 1}. ${getLocalizedQuizTaskDisplayTitle(task)}`;
     quizTaskSelect.append(option);
   });
 };
@@ -288,7 +350,7 @@ const startNewQuiz = (): void => {
 
 const resumeQuizFromExport = (sessionExport: QuizSessionExport): void => {
   if (!canRestoreQuizFromExport(sessionExport)) {
-    quizFeedback.textContent = "❌ Der Report passt nicht zu den aktuellen Quiz-Aufgaben.";
+    quizFeedback.textContent = t(currentLanguage, "quizReportMismatch");
     return;
   }
 
@@ -309,7 +371,7 @@ const resumeQuizFromExport = (sessionExport: QuizSessionExport): void => {
     localStorage.setItem(QUIZ_PARTICIPANT_NAME_STORAGE_KEY, participantName);
   }
 
-  quizFeedback.textContent = "📂 Quiz-Stand aus Report geladen. Du kannst direkt weiterarbeiten.";
+  quizFeedback.textContent = t(currentLanguage, "quizReportLoaded");
 };
 
 const requestQuizResumeFile = (): void => {
@@ -416,7 +478,7 @@ const applyTaskEditability = (): void => {
   quizCheckFloatingButton.disabled = locked;
   quizTimerToggleButton.hidden = locked;
   quizTimerToggleButton.disabled = !isQuizModeActive || activeTaskCompleted;
-  quizTimerToggleButton.textContent = quizTimerPaused ? "Fortsetzen" : "Pause";
+  quizTimerToggleButton.textContent = quizTimerPaused ? t(currentLanguage, "quizTimerResume") : t(currentLanguage, "quizTimerPause");
   quizReworkButton.hidden = !canRework;
   quizReworkButton.disabled = !canRework;
 };
@@ -449,6 +511,8 @@ const adapters = listAdapters();
 if (adapters.length === 0) {
   throw new Error("Keine Datenformat-Adapter registriert.");
 }
+
+const adapterLabelById = new Map(adapters.map((adapter) => [adapter.id, adapter.label] as const));
 
 adapters.forEach((adapter) => {
   const option = document.createElement("option");
@@ -489,7 +553,9 @@ const updateExpectedPreviewToggleButton = (task: QuizTask): void => {
   if (!isGraphTask) {    return;
   }
 
-  const actionLabel = quizExpectedPreviewVisible ? "Soll-Vorschau ausblenden" : "Soll-Vorschau anzeigen";
+  const actionLabel = quizExpectedPreviewVisible
+    ? t(currentLanguage, "quizExpectedPreviewHide")
+    : t(currentLanguage, "quizExpectedPreviewShow");
   quizExpectedToggleButton.title = actionLabel;
   quizExpectedToggleButton.setAttribute("aria-label", actionLabel);
   quizExpectedToggleButton.setAttribute("aria-pressed", quizExpectedPreviewVisible ? "true" : "false");
@@ -560,7 +626,7 @@ const renderExpectedQuizGraphPreview = (task: QuizTask): void => {
   }
 
   const previewGraph = task.expectedGraph ?? task.initialGraph;
-  quizExpectedPreviewLabel.textContent = `Vorschau: ${task.title}`;
+  quizExpectedPreviewLabel.textContent = `${t(currentLanguage, "quizPreviewLabelPrefix")} ${getLocalizedQuizTaskDisplayTitle(task)}`;
   quizExpectedPreviewEditor.loadGraph(previewGraph);
   quizExpectedPreviewEditor.resetViewportToOrigin();
   quizExpectedPreviewEditor.setZoom(1);
@@ -587,6 +653,13 @@ const createActiveQuizTaskSessionState = (): QuizTaskSessionState => ({
 
 const serializeQuizGraph = (graph: CfcGraph): string => getCurrentAdapter().serialize(graph);
 
+const localizeInitialQuizFeedback = (feedback: string, isOpenTask: boolean): string => {
+  if (feedback.includes("geladen")) {
+    return isOpenTask ? t(currentLanguage, "quizOpenInitialFeedback") : t(currentLanguage, "quizGraphInitialFeedback");
+  }
+  return feedback;
+};
+
 const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   pauseTaskTimer();
   setQuizFormatForTaskIndex(viewState.index);
@@ -599,14 +672,15 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   activeTaskCompleted = viewState.isCompleted;
   activeOpenAnswerHistory = viewState.answerHistory?.map((entry) => ({ ...entry })) ?? [];
   dataPanelUi.dataText.placeholder = viewState.task.kind === "open"
-    ? viewState.task.placeholder ?? "Antwort hier eingeben..."
+    ? t(currentLanguage, "quizOpenQuestionPlaceholder")
     : "";
   if (isOpenTask) {
     resetOpenTaskExpectedPreviewUi();
   }
-  quizCheckFloatingButton.setAttribute("title", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
-  quizCheckFloatingButton.setAttribute("aria-label", isOpenTask ? "Antwort speichern" : "Antwort prüfen");
-  quizDescription.textContent = `${viewState.task.title}: ${viewState.task.description}`;
+  const floatingActionLabel = isOpenTask ? t(currentLanguage, "quizFloatingCheckTitleOpen") : t(currentLanguage, "quizFloatingCheckTitleGraph");
+  quizCheckFloatingButton.setAttribute("title", floatingActionLabel);
+  quizCheckFloatingButton.setAttribute("aria-label", floatingActionLabel);
+  quizDescription.textContent = `${getLocalizedQuizTaskDisplayTitle(viewState.task)}${t(currentLanguage, "quizTaskViewPrefixSeparator")}${getLocalizedQuizTaskDescription(viewState.task)}`;
   updateExpectedPreviewToggleButton(viewState.task);
   renderExpectedQuizGraphPreview(viewState.task);
   if (quizExpectedPreviewVisible && isGraphQuizTask(viewState.task)) {
@@ -621,7 +695,7 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
       renderExpectedQuizGraphPreview(stillActiveTask);
     });
   }
-  quizFeedback.textContent = viewState.feedback;
+  quizFeedback.textContent = localizeInitialQuizFeedback(viewState.feedback, isOpenTask);
   quizTaskSelect.value = String(viewState.index);
   quizPrevButton.disabled = viewState.index <= 0;
   quizNextButton.disabled = viewState.index >= quizSession.getTasks().length - 1;
@@ -725,25 +799,25 @@ const importQuizDataIntoGraph = (): boolean => {
 
 const formatQuizFailedChecks = (failedChecks: string[]): string => {
   if (failedChecks.length === 0) {
-    return "❌ Noch nicht erfüllt.";
+    return t(currentLanguage, "quizNotYetFulfilled");
   }
 
   const [primaryIssue, ...remainingIssues] = failedChecks;
   if (!primaryIssue) {
-    return "❌ Noch nicht erfüllt.";
+    return t(currentLanguage, "quizNotYetFulfilled");
   }
 
   if (remainingIssues.length === 0) {
     return `❌ ${primaryIssue}`;
   }
 
-  return `❌ ${primaryIssue}\nWeitere: ${remainingIssues.join(" | ")}`;
+  return `❌ ${primaryIssue}\n${t(currentLanguage, "quizMoreLabel")} ${remainingIssues.join(" | ")}`;
 };
 
 const runQuizCheck = (): void => {
   const activeTask = quizSession.getActiveTask();
   if (activeTaskCompleted) {
-    quizFeedback.textContent = "✅ Aufgabe ist bereits abgeschlossen und gesperrt.";
+    quizFeedback.textContent = t(currentLanguage, "quizAlreadyCompleted");
     return;
   }
 
@@ -752,9 +826,9 @@ const runQuizCheck = (): void => {
       record: {
         timestamp: new Date().toISOString(),
         taskId: activeTask.id,
-        taskTitle: activeTask.title,
+        taskTitle: getLocalizedQuizTaskDisplayTitle(activeTask),
         taskKind: activeTask.kind,
-        question: activeTask.description,
+        question: getLocalizedQuizTaskDescription(activeTask),
         dataModelOrAnswer: dataPanel.getDataText(),
         taskElapsedMs: getElapsedMs(),
         taskCompleted: activeTaskCompleted,
@@ -779,7 +853,7 @@ const runQuizCheck = (): void => {
       },
     ];
     const saveMessage = activeTask.saveMessage
-      ?? "💾 Antwort gespeichert. Mit \"Überarbeiten\" kannst du die Aufgabe erneut öffnen.";
+      ?? t(currentLanguage, "quizAnswerSaved");
     markCurrentTaskCompleted();
     quizFeedback.textContent = saveMessage;
     quizSession.saveActiveState(createActiveQuizTaskSessionState());
@@ -788,7 +862,7 @@ const runQuizCheck = (): void => {
   }
 
   if (!importQuizDataIntoGraph()) {
-    const invalidDataMessage = quizFeedback.textContent ?? "❌ Ungültiges Datenformat.";
+    const invalidDataMessage = quizFeedback.textContent ?? t(currentLanguage, "quizInvalidData");
     queueAttempt(false, invalidDataMessage);
     return;
   }
@@ -796,7 +870,7 @@ const runQuizCheck = (): void => {
   const result = quizSession.evaluateActiveTask(currentGraph);
 
   if (result.success) {
-    const successMessage = "✅ Aufgabe erfüllt.";
+    const successMessage = t(currentLanguage, "quizSuccess");
     markCurrentTaskCompleted();
     quizCheckFloatingButton.disabled = true;
     quizFeedback.textContent = successMessage;
@@ -1090,10 +1164,11 @@ quizResumeFileInput.addEventListener("change", () => {
       resumeQuizFromExport(sessionExport);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const loadFailedMessage = `${t(currentLanguage, "quizReportLoadFailedPrefix")}${message}`;
       if (isQuizModeActive) {
-        quizFeedback.textContent = `❌ Report konnte nicht geladen werden: ${message}`;
+        quizFeedback.textContent = loadFailedMessage;
       } else {
-        window.alert(`Report konnte nicht geladen werden: ${message}`);
+        window.alert(loadFailedMessage);
       }
     }
   })();
@@ -1123,16 +1198,18 @@ quizPrevButton.addEventListener("click", () => {
 });
 
 quizBackButton.addEventListener("click", () => {
-  if (!isQuizModeActive) {
-    return;
-  }
-  const shouldAbortQuiz = window.confirm(
-    "Quiz wirklich abbrechen? Dein aktueller Quiz-Fortschritt wird verworfen.",
-  );
-  if (!shouldAbortQuiz) {
-    return;
-  }
-  setQuizModeActive(false);
+  void (async () => {
+    if (!isQuizModeActive) {
+      return;
+    }
+
+    const shouldAbortQuiz = await quizAbortDialog.requestConfirm();
+    if (!shouldAbortQuiz) {
+      return;
+    }
+
+    setQuizModeActive(false);
+  })();
 });
 
 quizTimerToggleButton.addEventListener("click", () => {
@@ -1236,7 +1313,7 @@ quizReworkButton.addEventListener("click", () => {
 
   activeTaskCompleted = false;
   startTaskTimer(true);
-  quizFeedback.textContent = "✏️ Überarbeitungsmodus aktiv. Die Zeit läuft wieder.";
+  quizFeedback.textContent = t(currentLanguage, "quizEditingModeActive");
   applyTaskEditability();
   quizSession.saveActiveState(createActiveQuizTaskSessionState());
 });
@@ -1398,6 +1475,194 @@ installKeyboardShortcutsController({
   onEscape: () => toolbar.handleEscape(),
 });
 
+const setTextBySelector = (selector: string, text: string): void => {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element) {
+    element.textContent = text;
+  }
+};
+
+const setAttributeBySelector = (selector: string, name: string, value: string): void => {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element) {
+    element.setAttribute(name, value);
+  }
+};
+
+const applyLanguageHeaderAndToolbar = (): void => {
+  document.documentElement.lang = currentLanguage;
+  document.title = t(currentLanguage, "appTitle");
+  setTextBySelector(".toolbar__header h1", t(currentLanguage, "appTitle"));
+
+  languageToggleButton.textContent = currentLanguage === "de" ? "EN" : "DE";
+  const languageAria = t(currentLanguage, "languageToggle");
+  languageToggleButton.setAttribute("aria-label", languageAria);
+  languageToggleButton.setAttribute("title", languageAria);
+  toolbarUi.bulkMenuToggleButton.textContent = t(currentLanguage, "bulkMenuToggle");
+  setTextBySelector('label[for="format-select"]', t(currentLanguage, "formatLabel"));
+  toolbarUi.exportButton.textContent = t(currentLanguage, "export");
+  toolbarUi.importButton.textContent = t(currentLanguage, "import");
+  toolbarUi.roundtripButton.textContent = t(currentLanguage, "roundtrip");
+  quizToggleButton.textContent = t(currentLanguage, "quizMode");
+  quizEndButton.textContent = t(currentLanguage, "quizEnd");
+  quizEndButton.setAttribute("title", t(currentLanguage, "quizEndTitle"));
+  quizBackButton.setAttribute("aria-label", t(currentLanguage, "quizBackTitle"));
+  quizBackButton.setAttribute("title", t(currentLanguage, "quizBackTitle"));
+};
+
+const applyLanguageBulkMenu = (): void => {
+  setTextBySelector('label[for="bulk-box-count"]', t(currentLanguage, "bulkBoxCountLabel"));
+  setTextBySelector('label[for="bulk-connection-count"]', t(currentLanguage, "bulkConnectionCountLabel"));
+  setTextBySelector("#bulk-connection-mode-group legend", t(currentLanguage, "bulkConnectionModeLegend"));
+
+  const bulkOptionTitles = Array.from(document.querySelectorAll<HTMLElement>(".bulk-connection-mode__title"));
+  const bulkOptionDescs = Array.from(document.querySelectorAll<HTMLElement>(".bulk-connection-mode__desc"));
+  if (bulkOptionTitles[0] && bulkOptionDescs[0]) {
+    bulkOptionTitles[0].textContent = t(currentLanguage, "bulkConnectionModeCountTitle");
+    bulkOptionDescs[0].textContent = t(currentLanguage, "bulkConnectionModeCountDesc");
+  }
+  if (bulkOptionTitles[1] && bulkOptionDescs[1]) {
+    bulkOptionTitles[1].textContent = t(currentLanguage, "bulkConnectionModeSingleTitle");
+    bulkOptionDescs[1].textContent = t(currentLanguage, "bulkConnectionModeSingleDesc");
+  }
+  if (bulkOptionTitles[2] && bulkOptionDescs[2]) {
+    bulkOptionTitles[2].textContent = t(currentLanguage, "bulkConnectionModeAllToAllTitle");
+    bulkOptionDescs[2].textContent = t(currentLanguage, "bulkConnectionModeAllToAllDesc");
+  }
+
+  setAttributeBySelector(".bulk-menu__advanced", "aria-label", t(currentLanguage, "bulkAdvancedAriaLabel"));
+  setTextBySelector("#bulk-type-details summary", t(currentLanguage, "bulkTypeSummary"));
+  setTextBySelector(".bulk-type-details__hint", t(currentLanguage, "bulkTypeHint"));
+  toolbarUi.bulkTypeResetButton.setAttribute("aria-label", t(currentLanguage, "bulkTypeResetAria"));
+  toolbarUi.bulkTypeResetButton.setAttribute("title", t(currentLanguage, "bulkTypeResetAria"));
+  toolbarUi.bulkCreateButton.textContent = t(currentLanguage, "bulkCreate");
+};
+
+const applyLanguageWorkspaceAndDataArea = (): void => {
+  setTextBySelector(".toolbox h2", t(currentLanguage, "toolboxTitle"));
+  setAttributeBySelector(".toolbox", "aria-label", t(currentLanguage, "toolboxAriaLabel"));
+  canvas.setAttribute("aria-label", t(currentLanguage, "canvasAriaLabel"));
+  setAttributeBySelector("#canvas .graph-zoom-overlay", "aria-label", t(currentLanguage, "zoomOverlayAriaLabel"));
+  quizPreviewResizer.setAttribute("aria-label", t(currentLanguage, "quizPreviewResizerAria"));
+  quizExpectedPreviewLabel.textContent = t(currentLanguage, "quizExpectedPreviewLabel");
+  quizExpectedCanvas.setAttribute("aria-label", t(currentLanguage, "quizExpectedCanvasAria"));
+  setAttributeBySelector("#quiz-expected-zoom-overlay", "aria-label", t(currentLanguage, "quizExpectedZoomAria"));
+
+  dataResizer.setAttribute("aria-label", t(currentLanguage, "dataResizerAriaLabel"));
+  dataResizer.setAttribute("title", t(currentLanguage, "dataResizerTitle"));
+  setTextBySelector('label[for="data-text"]', t(currentLanguage, "dataLabel"));
+};
+
+const applyLanguageQuizNavigationAndActions = (): void => {
+  quizPrevButton.setAttribute("aria-label", t(currentLanguage, "quizTogglePrevTitle"));
+  quizPrevButton.setAttribute("title", t(currentLanguage, "quizTogglePrevTitle"));
+  quizNextButton.setAttribute("aria-label", t(currentLanguage, "quizToggleNextTitle"));
+  quizNextButton.setAttribute("title", t(currentLanguage, "quizToggleNextTitle"));
+  quizReworkButton.setAttribute("title", t(currentLanguage, "quizReworkTitle"));
+  quizReworkButton.textContent = t(currentLanguage, "quizRework");
+  
+  quizTaskLocked.setAttribute("title", t(currentLanguage, "quizTaskLockedTitle"));
+  
+  const dataToggleAria = t(currentLanguage, "dataToggleAriaLabel");
+  const dataToggleTitle = t(currentLanguage, "dataToggleTitle");
+  setAttributeBySelector('#data-toggle', "aria-label", dataToggleAria);
+  setAttributeBySelector('#data-toggle', "title", dataToggleTitle);
+
+  const activeTask = quizSession.isActive() ? quizSession.getActiveTask() : null;
+  const isOpenTask = activeTask !== null && !isGraphQuizTask(activeTask);
+  const floatingActionLabel = isOpenTask
+    ? t(currentLanguage, "quizFloatingCheckTitleOpen")
+    : t(currentLanguage, "quizFloatingCheckTitleGraph");
+  quizCheckFloatingButton.setAttribute("title", floatingActionLabel);
+  quizCheckFloatingButton.setAttribute("aria-label", floatingActionLabel);
+  if (activeTask) {
+    updateExpectedPreviewToggleButton(activeTask);
+  }
+};
+
+const applyLanguageQuizEntryOverlay = (): void => {
+  quizEntryCloseButton.setAttribute("aria-label", t(currentLanguage, "quizEntryCloseAria"));
+  quizEntryCloseButton.setAttribute("title", t(currentLanguage, "quizEntryCloseTitle"));
+  setTextBySelector("#quiz-entry-title", t(currentLanguage, "quizEntryTitle"));
+  setTextBySelector(".quiz-entry-card__intro", t(currentLanguage, "quizEntryIntro"));
+  setAttributeBySelector(".quiz-entry-rules", "aria-label", t(currentLanguage, "quizEntryRulesAria"));
+  setTextBySelector(".quiz-entry-rules h3", t(currentLanguage, "quizEntryRulesTitle"));
+
+  const quizEntryRuleItems = Array.from(document.querySelectorAll<HTMLElement>(".quiz-entry-rules li"));
+  if (quizEntryRuleItems[0]) {
+    quizEntryRuleItems[0].textContent = t(currentLanguage, "quizEntryRuleOrder");
+  }
+  if (quizEntryRuleItems[1]) {
+    quizEntryRuleItems[1].textContent = t(currentLanguage, "quizEntryRuleCheck");
+  }
+  if (quizEntryRuleItems[2]) {
+    quizEntryRuleItems[2].textContent = t(currentLanguage, "quizEntryRuleTimer");
+  }
+  if (quizEntryRuleItems[3]) {
+    quizEntryRuleItems[3].textContent = t(currentLanguage, "quizEntryRuleExport");
+  }
+
+  quizEntryStartButton.textContent = t(currentLanguage, "quizEntryStart");
+  quizEntryResumeButton.textContent = t(currentLanguage, "quizEntryResume");
+};
+
+const applyLanguageParticipantDialog = (): void => {
+  setTextBySelector(".cfc-participant-dialog__title", t(currentLanguage, "participantDialogTitle"));
+  setTextBySelector('label[for="participant-name-input"]', t(currentLanguage, "participantDialogNameLabel"));
+  participantNameDialogUi.input.setAttribute("placeholder", t(currentLanguage, "participantDialogNamePlaceholder"));
+  participantNameDialogUi.cancelButton.textContent = t(currentLanguage, "participantDialogCancel");
+  setTextBySelector("#participant-name-submit", t(currentLanguage, "participantDialogSubmit"));
+};
+
+const applyLanguageQuizAbortDialog = (): void => {
+  setTextBySelector("#quiz-abort-title", t(currentLanguage, "quizAbortDialogTitle"));
+  quizAbortDialogUi.message.textContent = t(currentLanguage, "quizAbortConfirm");
+  quizAbortDialogUi.cancelButton.textContent = t(currentLanguage, "quizAbortDialogCancel");
+  quizAbortDialogUi.confirmButton.textContent = t(currentLanguage, "quizAbortDialogConfirm");
+};
+
+const renderQuizTaskOptions = (): void => {
+  quizTaskSelect.innerHTML = "";
+  quizSession.getTasks().forEach((task, index) => {
+    const isCompleted = quizSession.getSnapshot().taskStates[task.id]?.isCompleted;
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `${index + 1}${t(currentLanguage, "taskOptionPrefixSeparator")}${getLocalizedQuizTaskDisplayTitle(task)}`;
+    quizTaskSelect.appendChild(option);
+  });
+  if (quizSession.isActive()) {
+    quizTaskSelect.value = String(quizSession.getActiveIndex());
+  }
+};
+
+const applyLanguageToStaticUi = (): void => {
+  applyLanguageHeaderAndToolbar();
+  applyLanguageBulkMenu();
+  applyLanguageWorkspaceAndDataArea();
+  applyLanguageQuizNavigationAndActions();
+  applyLanguageQuizEntryOverlay();
+  applyLanguageParticipantDialog();
+  applyLanguageQuizAbortDialog();
+  renderQuizTaskOptions();
+};
+
+const refreshActiveQuizTaskView = (): void => {
+  if (!quizSession.isActive()) {
+    return;
+  }
+
+  applyQuizTaskViewState(
+    quizSession.selectTask(quizSession.getActiveIndex(), createActiveQuizTaskSessionState(), serializeQuizGraph),
+  );
+};
+
+languageToggleButton.addEventListener("click", () => {
+  currentLanguage = currentLanguage === "de" ? "en" : "de";
+  storeLanguage(currentLanguage);
+  applyLanguageToStaticUi();
+  refreshActiveQuizTaskView();
+});
+
 toolbarUi.formatSelect.addEventListener("change", () => {
   void getCurrentAdapter();
 });
@@ -1411,3 +1676,4 @@ installDataAreaResize({
 updateTimerLabel();
 applyTaskEditability();
 setQuizModeActive(false);
+applyLanguageToStaticUi();

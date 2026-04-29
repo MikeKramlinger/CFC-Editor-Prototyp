@@ -1,17 +1,20 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CFC-Editor Prototyp</title>
+    <title>CFC Editor Prototype</title>
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
     <main class="layout">
       <section class="toolbar">
         <div class="toolbar__header">
-          <h1>CFC-Editor Prototyp</h1>
-          <button id="theme-toggle" type="button" aria-pressed="false" aria-label="Dark Theme aktivieren">🌙 Dark</button>
+          <h1>CFC Editor Prototype</h1>
+          <div class="toolbar__header-actions">
+            <button id="language-toggle" type="button" aria-label="Switch language to German">DE</button>
+            <button id="theme-toggle" type="button" aria-pressed="false" aria-label="Dark Theme aktivieren">🌙 Dark</button>
+          </div>
         </div>
         <div class="toolbar__row toolbar__row--main">
           <button id="routing-mode" type="button">Routing: Bezier</button>
@@ -224,6 +227,29 @@
             type="submit"
           >
             Exportieren
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="quiz-abort-dialog" class="cfc-participant-dialog">
+      <form id="quiz-abort-form" method="dialog" class="cfc-participant-dialog__form">
+        <h3 id="quiz-abort-title" class="cfc-participant-dialog__title">Quiz abbrechen</h3>
+        <p id="quiz-abort-message" class="cfc-participant-dialog__hint">Quiz wirklich abbrechen? Dein aktueller Quiz-Fortschritt wird verworfen.</p>
+        <div class="cfc-participant-dialog__actions">
+          <button
+            id="quiz-abort-confirm"
+            class="cfc-participant-dialog__button cfc-participant-dialog__button--submit"
+            type="submit"
+          >
+            Quiz abbrechen
+          </button>
+          <button
+            id="quiz-abort-cancel"
+            class="cfc-participant-dialog__button cfc-participant-dialog__button--cancel"
+            type="button"
+          >
+            Weiter bearbeiten
           </button>
         </div>
       </form>

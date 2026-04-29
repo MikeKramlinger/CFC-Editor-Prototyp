@@ -1,3 +1,6 @@
+import { getStoredLanguage, t, type UiLanguage } from "../../i18n.js";
+let currentLanguage: UiLanguage = getStoredLanguage() ?? "en";
+
 export interface NodeEditDialogSubmitPayload {
   label: string;
   executionOrder: number | null;
@@ -19,6 +22,8 @@ export interface NodeEditDialogHandle {
 }
 
 export const createNodeEditDialog = (options: NodeEditDialogOptions): NodeEditDialogHandle => {
+  currentLanguage = getStoredLanguage() ?? "en";
+
   const dialog = document.createElement("div");
   dialog.className = "cfc-node-edit-dialog";
   dialog.style.pointerEvents = "auto";
@@ -60,11 +65,11 @@ export const createNodeEditDialog = (options: NodeEditDialogOptions): NodeEditDi
 
   const cancelButton = document.createElement("button");
   cancelButton.type = "button";
-  cancelButton.textContent = "Abbrechen";
-
+  cancelButton.textContent = t(currentLanguage, "cancelButton");
+  
   const saveButton = document.createElement("button");
   saveButton.type = "submit";
-  saveButton.textContent = "Übernehmen";
+  saveButton.textContent = t(currentLanguage, "applyButton");
 
   actions.append(cancelButton, saveButton);
   form.append(actions);

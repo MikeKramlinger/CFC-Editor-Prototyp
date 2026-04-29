@@ -109,6 +109,5 @@ export const SAMPLE_QUIZ_TASKS: QuizTask[] = [
     description: "Beschreibe kurz, warum eine klare Signalrichtung im Graphen wichtig ist.",
     initialGraph: cloneGraph(baseGraph),
     placeholder: "Deine Antwort ...",
-    saveMessage: "💾 Antwort gespeichert.",
   },
 ];
