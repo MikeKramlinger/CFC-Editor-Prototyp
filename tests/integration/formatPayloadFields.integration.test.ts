@@ -56,8 +56,8 @@ describe("format payload fields integration", () => {
     expect(raw).toContain("N2.OUT --> N3.IN1");
   });
 
-  it("writes expected attributes in PLCopenXML", () => {
-    const raw = getAdapterById("plcopen-xml").serialize(graph);
+  it("writes expected attributes in XML", () => {
+    const raw = getAdapterById("xml").serialize(graph);
 
     expect(raw).toContain('<cfcEditor version="1.2">');
     expect(raw).toContain('<node id="N1" type="input" label="In" x="1" y="2"/>');
@@ -68,17 +68,17 @@ describe("format payload fields integration", () => {
     expect(raw).toContain('<connection id="C2" from="N2" fromPort="output:0" to="N3" toPort="input:0"/>');
   });
 
-  it("writes expected structures in OG PLCopenXML", () => {
-    const raw = getAdapterById("og-plcopen-xml").serialize(graph);
+  it("writes expected structures in PLCopenXML", () => {
+    const raw = getAdapterById("plcopen-xml").serialize(graph);
 
     expect(raw).toContain('<CFC>');
-    expect(raw).toContain('<inVariable localId="1">');
-    expect(raw).toContain('<position x="1" y="2"/>');
-    expect(raw).toContain('<block localId="2" executionOrderId="1" typeName="Box">');
-    expect(raw).toContain('<position x="7" y="3"/>');
-    expect(raw).toContain('<outVariable localId="3" executionOrderId="2">');
-    expect(raw).toContain('<position x="14" y="4"/>');
-    expect(raw).toContain('<comment localId="4">');
-    expect(raw).toContain('<position x="5" y="9"/>');
+    expect(raw).toContain('<inVariable localId="0">');
+    expect(raw).toContain('<position x="1" y="2" />');
+    expect(raw).toContain('<block localId="1" executionOrderId="1" typeName="Box"');
+    expect(raw).toContain('<position x="7" y="3" />');
+    expect(raw).toContain('<outVariable localId="2" executionOrderId="2">');
+    expect(raw).toContain('<position x="14" y="4" />');
+    expect(raw).toContain('<comment localId="3"');
+    expect(raw).toContain('<position x="5" y="9" />');
   });
 });

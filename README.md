@@ -20,6 +20,7 @@ Interaktiver CFC-Editor für die Masterarbeit mit Fokus auf visuelles Modelliere
 ## Unterstützte Formate
 
 - PLCopenXML
+- XML
 - JSON
 - CFC-DSL
 
