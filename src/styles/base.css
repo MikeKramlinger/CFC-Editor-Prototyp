@@ -993,8 +993,27 @@ input[type="number"]:hover {
   min-height: 32px;
 }
 
-.data-area__header > label {
+.data-mode-tabs {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.data-mode-tab {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
+.data-mode-tab[aria-selected="true"] {
+  border-color: #2358d4;
+  background: #eaf0ff;
+  color: #16377f;
+}
+
+.data-mode-tab[aria-selected="false"] {
+  background: #f7f9fc;
 }
 
 .quiz-center-cluster {
@@ -1072,16 +1091,20 @@ input[type="number"]:hover {
   font-size: 12px;
 }
 
-.data-area__header label {
-  font-weight: 600;
-}
-
 .layout.data-expanded .data-area {
   position: fixed;
   inset: 8px;
   z-index: 100;
   min-height: 0;
   background: #fff;
+}
+
+.data-panel {
+  min-height: 0;
+}
+
+.data-panel[hidden] {
+  display: none;
 }
 
 .data-editor {

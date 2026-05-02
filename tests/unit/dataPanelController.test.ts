@@ -7,27 +7,55 @@ const createFixture = () => {
   document.body.innerHTML = `
     <div id="layout">
       <button id="toggle" type="button"></button>
-      <pre id="lines"></pre>
-      <textarea id="data"></textarea>
+      <button id="mode-model" type="button"></button>
+      <button id="mode-declaration" type="button"></button>
+      <div id="panel-model">
+        <pre id="lines"></pre>
+        <textarea id="data"></textarea>
+      </div>
+      <div id="panel-declaration" hidden>
+        <pre id="declaration-lines"></pre>
+        <textarea id="declaration"></textarea>
+      </div>
       <p id="metrics"></p>
     </div>
   `;
 
   const layout = document.querySelector<HTMLElement>("#layout")!;
   const dataToggleButton = document.querySelector<HTMLButtonElement>("#toggle")!;
+  const dataModeModelButton = document.querySelector<HTMLButtonElement>("#mode-model")!;
+  const dataModeDeclarationButton = document.querySelector<HTMLButtonElement>("#mode-declaration")!;
+  const dataModelPanel = document.querySelector<HTMLDivElement>("#panel-model")!;
+  const declarationPanel = document.querySelector<HTMLDivElement>("#panel-declaration")!;
   const dataText = document.querySelector<HTMLTextAreaElement>("#data")!;
   const dataLines = document.querySelector<HTMLPreElement>("#lines")!;
+  const declarationText = document.querySelector<HTMLTextAreaElement>("#declaration")!;
+  const declarationLines = document.querySelector<HTMLPreElement>("#declaration-lines")!;
   const metrics = document.querySelector<HTMLParagraphElement>("#metrics")!;
 
-  createDataPanelController({
+  const controller = createDataPanelController({
     layout,
     dataToggleButton,
+    dataModeModelButton,
+    dataModeDeclarationButton,
+    dataModelPanel,
+    declarationPanel,
     dataText,
     dataLines,
+    declarationText,
+    declarationLines,
     metrics,
   });
 
-  return { dataText };
+  return {
+    dataText,
+    declarationText,
+    dataModeModelButton,
+    dataModeDeclarationButton,
+    dataModelPanel,
+    declarationPanel,
+    controller,
+  };
 };
 
 describe("data panel controller", () => {
@@ -156,5 +184,31 @@ describe("data panel controller", () => {
     }));
 
     expect(dataText.value).toBe("  nodeA --> nodeB\n  ");
+  });
+
+  it("switches between data model and declaration mode", () => {
+    const { dataModeDeclarationButton, dataModeModelButton, dataModelPanel, declarationPanel, controller } = createFixture();
+
+    expect(controller.getMode()).toBe("data-model");
+    expect(dataModelPanel.hidden).toBe(false);
+    expect(declarationPanel.hidden).toBe(true);
+
+    dataModeDeclarationButton.click();
+
+    expect(controller.getMode()).toBe("declaration");
+    expect(dataModelPanel.hidden).toBe(true);
+    expect(declarationPanel.hidden).toBe(false);
+
+    dataModeModelButton.click();
+
+    expect(controller.getMode()).toBe("data-model");
+    expect(dataModelPanel.hidden).toBe(false);
+    expect(declarationPanel.hidden).toBe(true);
+  });
+
+  it("prefills declaration editor with default PROGRAM block", () => {
+    const { declarationText } = createFixture();
+
+    expect(declarationText.value).toBe("PROGRAM CFC\nVAR\nEND_VAR");
   });
 });

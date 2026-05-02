@@ -141,7 +141,24 @@
           title="Datenbereich Höhe ziehen"
         ></div>
         <div class="data-area__header">
-          <label for="data-text">Daten</label>
+          <div class="data-mode-tabs" role="tablist" aria-label="Datenbereich-Modus">
+            <button
+              id="data-mode-model"
+              class="data-mode-tab"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="data-model-panel"
+            >Datenmodell</button>
+            <button
+              id="data-mode-declaration"
+              class="data-mode-tab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="data-declaration-panel"
+            >Deklaration</button>
+          </div>
           <div class="quiz-center-cluster">
             <div id="quiz-task-nav-inline" class="quiz-task-nav-inline" hidden>
               <button id="quiz-prev" type="button" aria-label="Vorherige Aufgabe" title="Vorherige Aufgabe">◀</button>
@@ -157,9 +174,17 @@
           </div>
           <button id="data-toggle" type="button" aria-expanded="false" aria-label="Datenbereich vergrößern" title="Datenbereich ein- oder ausklappen">⤢</button>
         </div>
-        <div class="data-editor">
-          <pre id="data-lines" class="data-lines" aria-hidden="true">1</pre>
-          <textarea id="data-text" spellcheck="false"></textarea>
+        <div id="data-model-panel" class="data-panel" role="tabpanel" aria-labelledby="data-mode-model">
+          <div class="data-editor">
+            <pre id="data-lines" class="data-lines" aria-hidden="true">1</pre>
+            <textarea id="data-text" spellcheck="false"></textarea>
+          </div>
+        </div>
+        <div id="data-declaration-panel" class="data-panel" role="tabpanel" aria-labelledby="data-mode-declaration" hidden>
+          <div class="data-editor data-editor--declaration">
+            <pre id="declaration-lines" class="data-lines" aria-hidden="true">1</pre>
+            <textarea id="declaration-text" spellcheck="false" placeholder="VAR\n    input : INT;\nEND_VAR"></textarea>
+          </div>
         </div>
         <button
           id="quiz-check-floating"

@@ -219,6 +219,24 @@ body[data-theme="dark"] .toolbox-item.active {
   box-shadow: inset 0 0 0 1px rgba(126, 161, 255, 0.32);
 }
 
+body[data-theme="dark"] .data-mode-tab[aria-selected="false"] {
+  background: #2a303b;
+  border-color: #4b5568;
+  color: #d2d9e8;
+}
+
+body[data-theme="dark"] .data-mode-tab[aria-selected="false"]:hover,
+body[data-theme="dark"] .data-mode-tab[aria-selected="false"]:focus-visible {
+  background: #353d4b;
+  border-color: #6a7891;
+}
+
+body[data-theme="dark"] .data-mode-tab[aria-selected="true"] {
+  border-color: #7ea1ff;
+  background: #2f3f61;
+  color: #eef3ff;
+}
+
 body[data-theme="dark"] .cfc-participant-dialog {
   border-color: #4b5568;
   background: #1f232b;

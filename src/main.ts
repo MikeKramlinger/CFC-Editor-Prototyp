@@ -471,6 +471,10 @@ const applyTaskEditability = (): void => {
   dataPanelUi.dataText.disabled = locked;
   dataPanelUi.dataText.setAttribute("aria-readonly", locked ? "true" : "false");
   dataPanelUi.dataText.setAttribute("aria-disabled", locked ? "true" : "false");
+  dataPanelUi.declarationText.readOnly = locked;
+  dataPanelUi.declarationText.disabled = locked;
+  dataPanelUi.declarationText.setAttribute("aria-readonly", locked ? "true" : "false");
+  dataPanelUi.declarationText.setAttribute("aria-disabled", locked ? "true" : "false");
   dataArea.classList.toggle("task-locked", locked);
   dataEditor.classList.toggle("is-readonly", locked);
   quizTimerInline.classList.toggle("is-completed", locked);
@@ -667,6 +671,7 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   const taskGraph = isOpenTask ? createEmptyGraph() : viewState.graph;
   editor.loadGraph(taskGraph);
   currentGraph = editor.getGraph();
+  dataPanel.setMode("data-model");
   dataPanel.setDataText(viewState.dataText);
   activeTaskElapsedMs = viewState.elapsedMs;
   activeTaskCompleted = viewState.isCompleted;
@@ -904,8 +909,14 @@ const getInitialTheme = (): UiTheme => {
 const dataPanel = createDataPanelController({
   layout: dataPanelUi.layout,
   dataToggleButton: dataPanelUi.dataToggleButton,
+  dataModeModelButton: dataPanelUi.dataModeModelButton,
+  dataModeDeclarationButton: dataPanelUi.dataModeDeclarationButton,
+  dataModelPanel: dataPanelUi.dataModelPanel,
+  declarationPanel: dataPanelUi.declarationPanel,
   dataText: dataPanelUi.dataText,
   dataLines: dataPanelUi.dataLines,
+  declarationText: dataPanelUi.declarationText,
+  declarationLines: dataPanelUi.declarationLines,
   metrics: dataPanelUi.metrics,
 });
 
@@ -1394,6 +1405,10 @@ dataPanelUi.dataText.addEventListener("pointerdown", () => {
   lastShortcutContext = "data";
 });
 
+dataPanelUi.declarationText.addEventListener("pointerdown", () => {
+  lastShortcutContext = "data";
+});
+
 canvas.addEventListener("pointerdown", () => {
   lastShortcutContext = "graph";
 });
@@ -1550,7 +1565,9 @@ const applyLanguageWorkspaceAndDataArea = (): void => {
 
   dataResizer.setAttribute("aria-label", t(currentLanguage, "dataResizerAriaLabel"));
   dataResizer.setAttribute("title", t(currentLanguage, "dataResizerTitle"));
-  setTextBySelector('label[for="data-text"]', t(currentLanguage, "dataLabel"));
+  setAttributeBySelector(".data-mode-tabs", "aria-label", t(currentLanguage, "dataModeTabsAriaLabel"));
+  dataPanelUi.dataModeModelButton.textContent = t(currentLanguage, "dataModeModel");
+  dataPanelUi.dataModeDeclarationButton.textContent = t(currentLanguage, "dataModeDeclaration");
 };
 
 const applyLanguageQuizNavigationAndActions = (): void => {
