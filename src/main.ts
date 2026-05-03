@@ -549,6 +549,11 @@ const editor = new CfcEditor(canvas, currentGraph, {
     currentGraph = graph;
     // Keep the declaration panel in sync when the graph changes
     syncDeclarationsFromGraphToPanel();
+
+    // In quiz graph tasks, keep data text in sync with the currently selected format.
+    if (isQuizModeActive && quizSession.isActive() && isGraphQuizTask(quizSession.getActiveTask())) {
+      dataPanel.setDataText(getCurrentAdapter().serialize(currentGraph));
+    }
   },
   onStatus: () => undefined,
   onNodeDeclarationRenamed: (oldName, newName) => {
@@ -687,7 +692,11 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   editor.loadGraph(taskGraph);
   currentGraph = editor.getGraph();
   dataPanel.setMode("data-model");
-  dataPanel.setDataText(viewState.dataText);
+  if (isGraphQuizTask(viewState.task)) {
+    dataPanel.setDataText(getCurrentAdapter().serialize(currentGraph));
+  } else {
+    dataPanel.setDataText(viewState.dataText);
+  }
   activeTaskElapsedMs = viewState.elapsedMs;
   activeTaskCompleted = viewState.isCompleted;
   activeOpenAnswerHistory = viewState.answerHistory?.map((entry) => ({ ...entry })) ?? [];
@@ -1741,6 +1750,9 @@ languageToggleButton.addEventListener("click", () => {
 
 toolbarUi.formatSelect.addEventListener("change", () => {
   void getCurrentAdapter();
+  if (isQuizModeActive && quizSession.isActive() && isGraphQuizTask(quizSession.getActiveTask())) {
+    dataPanel.setDataText(getCurrentAdapter().serialize(currentGraph));
+  }
 });
 
 dataPanel.setMetrics("");
