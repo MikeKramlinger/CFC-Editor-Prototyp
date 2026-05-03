@@ -1,6 +1,15 @@
 import type { DeclarationError, Declarations, DerivedVariable, ElementaryVariable, Variable } from "./types.js";
 import { isElementaryType } from "./types.js";
 
+export const sanitizeName = (s: string): string => {
+  if (!s) {
+    return s;
+  }
+
+  const replaced = s.replace(/[^A-Za-z0-9_]/g, "");
+  return /^[0-9]/.test(replaced) ? `_${replaced}` : replaced;
+};
+
 /**
  * Parsed eine Deklarationszeichenkette im Format:
  * PROGRAM CFC

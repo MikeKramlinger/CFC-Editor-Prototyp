@@ -15,6 +15,7 @@ const createFixture = () => {
       </div>
       <div id="panel-declaration" hidden>
         <pre id="declaration-lines"></pre>
+        <pre id="declaration-syntax"></pre>
         <textarea id="declaration"></textarea>
       </div>
       <p id="metrics"></p>
@@ -31,6 +32,7 @@ const createFixture = () => {
   const dataLines = document.querySelector<HTMLPreElement>("#lines")!;
   const declarationText = document.querySelector<HTMLTextAreaElement>("#declaration")!;
   const declarationLines = document.querySelector<HTMLPreElement>("#declaration-lines")!;
+  const declarationSyntax = document.querySelector<HTMLPreElement>("#declaration-syntax")!;
   const metrics = document.querySelector<HTMLParagraphElement>("#metrics")!;
 
   const controller = createDataPanelController({
@@ -44,6 +46,7 @@ const createFixture = () => {
     dataLines,
     declarationText,
     declarationLines,
+    declarationSyntax,
     metrics,
   });
 

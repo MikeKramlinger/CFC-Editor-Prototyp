@@ -38,6 +38,7 @@ import {
   type CfcNode,
   type CfcNodeType,
 } from "./model.js";
+import { syncCreatedNodeDeclaration } from "./declarations/index.js";
 
 const canvas = query<HTMLDivElement>("#canvas");
 const languageToggleButton = query<HTMLButtonElement>("#language-toggle");
@@ -1020,12 +1021,32 @@ const createBoxesAndConnections = (
       width: template.width,
       height: template.height,
     };
+    const declarationSync = syncCreatedNodeDeclaration(nextGraph.declarations, node);
+    nextGraph.declarations = declarationSync.declarations;
+    node.label = declarationSync.label;
+    if (declarationSync.typeName) {
+      node.typeName = declarationSync.typeName;
+    }
+
     nextGraph.nodes.push(node);
     newNodes.push(node);
     newNodeIds.push(node.id);
   }
 
   if (newNodes.length >= 2) {
+    const toConnectionKey = (
+      fromNodeId: string,
+      fromPort: string,
+      toNodeId: string,
+      toPort: string,
+    ): string => `${fromNodeId}|${fromPort}|${toNodeId}|${toPort}`;
+
+    const existingConnectionKeys = new Set(
+      nextGraph.connections.map((connection) =>
+        toConnectionKey(connection.fromNodeId, connection.fromPort, connection.toNodeId, connection.toPort)
+      ),
+    );
+
     const outputPorts = newNodes.flatMap((node) => {
       const template = getNodeTemplateByType(node.type);
       return Array.from({ length: template.outputCount }, (_value, index) => ({
@@ -1042,6 +1063,10 @@ const createBoxesAndConnections = (
     });
 
     const connect = (fromNodeId: string, fromPort: string, toNodeId: string, toPort: string): void => {
+      const key = toConnectionKey(fromNodeId, fromPort, toNodeId, toPort);
+      if (existingConnectionKeys.has(key)) {
+        return;
+      }
       const connection: CfcConnection = {
         id: `C${getNextSerialForPrefix(
           "C",
@@ -1053,6 +1078,7 @@ const createBoxesAndConnections = (
         toPort,
       };
       nextGraph.connections.push(connection);
+      existingConnectionKeys.add(key);
     };
 
     if (connectionMode === "all-to-all") {
