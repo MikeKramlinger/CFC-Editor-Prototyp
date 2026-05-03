@@ -518,7 +518,9 @@ export const cfcDslFormat: CfcFormatAdapter = {
   },
   deserialize(raw: string): CfcGraph {
     try {
-      return parseDslGraph(raw);
+      const graph = parseDslGraph(raw);
+      // DSL-Format speichert Deklarationen nicht, daher verwenden wir die Standardwerte
+      return graph;
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Ungueltige CFC-DSL: ${error.message}`);

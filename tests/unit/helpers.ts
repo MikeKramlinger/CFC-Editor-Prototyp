@@ -39,4 +39,5 @@ export const createGraph = (
   version,
   nodes,
   connections,
+  declarations: "PROGRAM CFC\nVAR\nEND_VAR",
 });

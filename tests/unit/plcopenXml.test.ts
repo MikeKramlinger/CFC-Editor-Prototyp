@@ -37,26 +37,26 @@ describe("PLCopenXML format", () => {
 
       expect(xml).toContain("<block localId=\"0\"");
       expect(xml).toContain('typeName="FB_Box"');
-      expect(xml).toContain('instanceName="FB_Box_0"');
+      expect(xml).toContain('instanceName="FB_Box"');
     });
 
-    it("uses typeName-specific instanceName index for multiple boxes of same type", () => {
+    it("uses the node label as instanceName for boxes", () => {
       const graph = createGraph(
         [
-          createNode("N1", "box", 0, 0, { label: "FB_Box" }),
-          createNode("N2", "box", 10, 0, { label: "FB_Box" }),
+          createNode("N1", "box", 0, 0, { label: "FB_Box_A" }),
+          createNode("N2", "box", 10, 0, { label: "FB_Box_B" }),
           createNode("N3", "box", 20, 0, { label: "FB_Other" }),
-          createNode("N4", "box", 30, 0, { label: "FB_Box" }),
+          createNode("N4", "box", 30, 0, { label: "FB_Box_C" }),
         ],
         [],
       );
 
       const xml = plcopenXmlFormat.serialize(graph);
 
-      expect(xml).toContain('instanceName="FB_Box_0"');
-      expect(xml).toContain('instanceName="FB_Box_1"');
-      expect(xml).toContain('instanceName="FB_Other_0"');
-      expect(xml).toContain('instanceName="FB_Box_2"');
+      expect(xml).toContain('instanceName="FB_Box_A"');
+      expect(xml).toContain('instanceName="FB_Box_B"');
+      expect(xml).toContain('instanceName="FB_Other"');
+      expect(xml).toContain('instanceName="FB_Box_C"');
     });
 
     it("includes interface localVars for input/output variables", () => {
@@ -85,8 +85,22 @@ describe("PLCopenXML format", () => {
 
       const xml = plcopenXmlFormat.serialize(graph);
 
-      expect(xml).toContain('<variable name="MyFunc_0">');
+      expect(xml).toContain('<variable name="MyFunc">');
       expect(xml).toContain('<derived name="MyFunc" />');
+    });
+
+    it("uses instanceName and typeName separately for box localVars", () => {
+      const graph = createGraph(
+        [createNode("N1", "box", 0, 0, { label: "InstanceA", typeName: "FB_Motor" })],
+        [],
+      );
+
+      const xml = plcopenXmlFormat.serialize(graph);
+
+      expect(xml).toContain('instanceName="InstanceA"');
+      expect(xml).toContain('typeName="FB_Motor"');
+      expect(xml).toContain('<variable name="InstanceA">');
+      expect(xml).toContain('<derived name="FB_Motor" />');
     });
 
     it("creates self-closing ST xhtml element with xmlns", () => {
@@ -266,6 +280,7 @@ describe("PLCopenXML format", () => {
         x: 0,
         y: 0,
       });
+      expect(graph.declarations).toContain("In : INT;");
     });
 
     it("correctly handles simple serialization and structure", () => {

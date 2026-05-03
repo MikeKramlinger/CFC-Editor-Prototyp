@@ -4,6 +4,7 @@ let currentLanguage: UiLanguage = getStoredLanguage() ?? "en";
 export interface NodeEditDialogSubmitPayload {
   label: string;
   executionOrder: number | null;
+  typeName?: string;
 }
 
 export interface NodeEditDialogOptions {
@@ -12,6 +13,7 @@ export interface NodeEditDialogOptions {
   maxExecutionOrder: number;
   leftPx: number;
   topPx: number;
+  compatibleVariables?: import("../../declarations/index.js").Variable[];
   onCancel: () => void;
   onSubmit: (payload: NodeEditDialogSubmitPayload) => void;
 }
@@ -31,6 +33,7 @@ export const createNodeEditDialog = (options: NodeEditDialogOptions): NodeEditDi
   const form = document.createElement("form");
   form.className = "cfc-node-edit-form";
 
+  // Name/Label Input
   const labelField = document.createElement("label");
   labelField.className = "cfc-node-edit-field";
   labelField.textContent = "Name";
@@ -43,6 +46,49 @@ export const createNodeEditDialog = (options: NodeEditDialogOptions): NodeEditDi
 
   form.append(labelField);
 
+  // Deklarations-Dropdown (immer anzeigen) - keep single Name field
+  const vars = options.compatibleVariables ?? [];
+  let declarationSelect: HTMLSelectElement | null = null;
+  {
+    const declarationField = document.createElement("label");
+    declarationField.className = "cfc-node-edit-field";
+    declarationField.textContent = "Declaration";
+
+    declarationSelect = document.createElement("select");
+    declarationSelect.className = "cfc-node-edit-input";
+
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = "— None —";
+    declarationSelect.append(emptyOption);
+    for (const variable of vars) {
+      const option = document.createElement("option");
+      option.value = variable.name;
+      option.textContent = `${variable.name} : ${variable.type}`;
+      // Pre-select if this matches the initial label
+      if (variable.name === options.initialLabel) {
+        option.selected = true;
+      }
+      declarationSelect.append(option);
+    }
+
+    // When a declaration is selected, update the Name field. If none selected, keep existing.
+    declarationSelect.addEventListener("change", () => {
+      const selected = declarationSelect!.value;
+      if (!selected) {
+        return;
+      }
+      const variable = vars.find((v) => v.name === selected);
+      if (!variable) return;
+      // Show instanceName in Name field (instanceName == declaration name)
+      nameInput.value = variable.name;
+    });
+
+    declarationField.append(declarationSelect);
+    form.append(declarationField);
+  }
+
+  // Execution Order (optional)
   const hasExecutionOrder = options.executionOrder !== null;
   const orderInput = document.createElement("input");
   if (hasExecutionOrder) {
@@ -60,13 +106,14 @@ export const createNodeEditDialog = (options: NodeEditDialogOptions): NodeEditDi
     form.append(orderField);
   }
 
+  // Aktionen
   const actions = document.createElement("div");
   actions.className = "cfc-node-edit-actions";
 
   const cancelButton = document.createElement("button");
   cancelButton.type = "button";
   cancelButton.textContent = t(currentLanguage, "cancelButton");
-  
+
   const saveButton = document.createElement("button");
   saveButton.type = "submit";
   saveButton.textContent = t(currentLanguage, "applyButton");
@@ -89,9 +136,16 @@ export const createNodeEditDialog = (options: NodeEditDialogOptions): NodeEditDi
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const parsedOrder = Number.parseInt(orderInput.value, 10);
+    const currentName = nameInput.value.trim();
+    const selectedVariable = currentName
+      ? vars.find((v) => v.name === currentName)
+      : undefined;
+    const isDerived = selectedVariable && !selectedVariable.isElementary;
+
     options.onSubmit({
-      label: nameInput.value.trim(),
+      label: currentName,
       executionOrder: hasExecutionOrder && !Number.isNaN(parsedOrder) ? parsedOrder : null,
+      typeName: isDerived ? selectedVariable!.type : undefined,
     });
   });
 

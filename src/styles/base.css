@@ -777,6 +777,16 @@ input[type="number"]:hover {
 .cfc-node__title {
   font-size: 14px;
   font-weight: 600;
+}
+
+/* Instance name shown above box for derived-type nodes */
+.cfc-node__instance {
+  position: absolute;
+  top: -26px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 18px;
+  color: #5f6673;
   white-space: nowrap;
 }
 

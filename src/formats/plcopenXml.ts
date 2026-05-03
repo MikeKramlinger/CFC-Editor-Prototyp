@@ -7,7 +7,9 @@ import {
   type CfcNodeType,
 } from "../model.js";
 import { getExecutionOrderByNodeId, isExecutionOrderedNode } from "../core/graph/executionOrder.js";
+import { generateDeclarations, isElementaryType, parseDeclarations, type Variable } from "../declarations/index.js";
 import type { CfcFormatAdapter } from "./types.js";
+import { deriveDeclarationsFromNodes } from "./shared.js";
 
 const NAMESPACE = "http://www.plcopen.org/xml/tc6_0200";
 
@@ -185,6 +187,67 @@ const parseTextFromXhtml = (element: Element, fallback: string): string => {
   return xhtml?.textContent?.trim() || fallback;
 };
 
+const parseInterfaceDeclarations = (xml: Document): string | null => {
+  const localVars = xml.getElementsByTagNameNS("*", "localVars").item(0);
+  if (!localVars) {
+    return null;
+  }
+
+  const variables: Variable[] = [];
+  const variableElements = Array.from(localVars.getElementsByTagNameNS("*", "variable"));
+
+  variableElements.forEach((variableElement) => {
+    const name = (variableElement.getAttribute("name") ?? "").trim();
+    if (!name || variables.some((entry) => entry.name === name)) {
+      return;
+    }
+
+    const typeElement = variableElement.getElementsByTagNameNS("*", "type").item(0);
+    const typeChild = typeElement ? Array.from(typeElement.children)[0] : undefined;
+    if (!typeChild) {
+      return;
+    }
+
+    if (typeChild.localName === "derived") {
+      const derivedName = (typeChild.getAttribute("name") ?? "").trim();
+      const derivedType = derivedName || name;
+      variables.push({
+        name,
+        type: derivedType,
+        isElementary: false,
+      });
+      return;
+    }
+
+    const elementaryType = typeChild.localName.toUpperCase();
+    if (isElementaryType(elementaryType)) {
+      variables.push({
+        name,
+        type: elementaryType,
+        isElementary: true,
+      });
+      return;
+    }
+
+    const fallbackType = (typeChild.getAttribute("name") ?? typeChild.localName).trim();
+    if (!fallbackType) {
+      return;
+    }
+
+    variables.push({
+      name,
+      type: fallbackType,
+      isElementary: false,
+    });
+  });
+
+  if (variables.length === 0) {
+    return null;
+  }
+
+  return generateDeclarations(variables);
+};
+
 const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNode | null => {
   const localId = element.getAttribute("localId") ?? "";
   if (localId.length === 0) {
@@ -333,7 +396,18 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
     const hasEnEno = inputNames.includes("EN") && outputNames.includes("ENO");
     const type: CfcNodeType = hasEnEno ? "box-en-eno" : "box";
     const template = getNodeTemplateByType(type);
-    const label = (element.getAttribute("typeName") ?? "Box").trim() || "Box";
+    const typeNameAttr = (element.getAttribute("typeName") ?? "Box").trim() || "Box";
+    const instanceNameAttr = (element.getAttribute("instanceName") ?? "").trim();
+    const node: CfcNode = {
+      id: `N${localId}`,
+      type,
+      label: instanceNameAttr || typeNameAttr,
+      x: position.x,
+      y: position.y,
+      width: template.width,
+      height: template.height,
+      typeName: typeNameAttr,
+    };
     return {
       localId,
       executionOrder,
@@ -341,15 +415,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       inputNames,
       outputNames,
       incomingRefs: collectIncomingRefsForVariables(inputVariables),
-      node: {
-        id: `N${localId}`,
-        type,
-        label,
-        x: position.x,
-        y: position.y,
-        width: template.width,
-        height: template.height,
-      },
+      node,
     };
   }
 
@@ -557,6 +623,19 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     const outputNamesByNodeId = new Map<string, string[]>(); // Store output port names for each node
     const typeNameIndexes = new Map<string, number>(); // Track instance index per typeName
     const instanceIndexByNodeId = new Map<string, number>(); // Map nodeId -> instance index for that typeName
+    const declarationTypeByName = new Map(
+      parseDeclarations(graph.declarations).variables.map((variable) => [variable.name, variable.type] as const),
+    );
+    const resolveBlockTypeName = (node: CfcNode): string => {
+      if (node.typeName && node.typeName.trim().length > 0) {
+        return node.typeName;
+      }
+      const declaredType = declarationTypeByName.get(node.label);
+      if (declaredType && declaredType.trim().length > 0) {
+        return declaredType;
+      }
+      return node.label;
+    };
     
     graph.nodes.forEach((node, index) => {
       localIdByNodeId.set(node.id, fallbackLocalId(node.id, index));
@@ -572,9 +651,10 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
       
       // Track instance index per typeName for blocks and vendorElements
       if (node.type === "box" || node.type === "box-en-eno") {
-        const currentIndex = typeNameIndexes.get(node.label) ?? 0;
+        const blockTypeName = resolveBlockTypeName(node);
+        const currentIndex = typeNameIndexes.get(blockTypeName) ?? 0;
         instanceIndexByNodeId.set(node.id, currentIndex);
-        typeNameIndexes.set(node.label, currentIndex + 1);
+        typeNameIndexes.set(blockTypeName, currentIndex + 1);
       }
     });
 
@@ -782,10 +862,13 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
       if (isExecutionOrderedNode(node)) {
         block.setAttribute("executionOrderId", String(executionOrder));
       }
-      block.setAttribute("typeName", node.label);
-      // instanceName uses typeName-specific index (0-based per typeName)
+      // typeName: use node.typeName first, then declaration type for this instance, then fallback to label
+      const typeName = resolveBlockTypeName(node);
+      block.setAttribute("typeName", typeName);
+      // instanceName: use the canonical label if available, otherwise generate from label and index
+      let instanceName: string;
       const typeIdx = instanceIndexByNodeId.get(node.id) ?? 0;
-      const instanceName = `${node.label}_${typeIdx}`;
+      instanceName = node.label || `${typeName}_${typeIdx}`;
       block.setAttribute("instanceName", instanceName);
       appendPosition(doc, block, node.x, node.y);
 
@@ -831,7 +914,7 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
       ifaceVar.setAttribute("name", instanceName);
       const typeElemB = doc.createElementNS(NAMESPACE, "type");
       const derivedB = doc.createElementNS(NAMESPACE, "derived");
-      derivedB.setAttribute("name", node.label);
+      derivedB.setAttribute("name", typeName);
       typeElemB.append(derivedB);
       ifaceVar.append(typeElemB);
       localVars.append(ifaceVar);
@@ -1002,6 +1085,8 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
         type: "box",
       };
     });
+
+    graph.declarations = parseInterfaceDeclarations(xml) ?? deriveDeclarationsFromNodes(graph.nodes);
 
     return graph;
   },

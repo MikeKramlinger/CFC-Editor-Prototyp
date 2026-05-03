@@ -5,9 +5,11 @@ import {
   type CfcConnection,
   type CfcGraph,
   type CfcNode,
+  type CfcNodeType,
 } from "../model.js";
 import { fitNodeWidthToLabel } from "../core/editor/nodeSizing.js";
 import { getExecutionOrderByNodeId, isExecutionOrderedNode } from "../core/graph/executionOrder.js";
+import { generateDeclarations, type Variable } from "../declarations/index.js";
 
 export const toFiniteNumber = (value: unknown, fallback = 0): number => {
   const parsed = Number(value);
@@ -74,6 +76,13 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
     width: template.width,
     height: template.height,
   };
+
+  if (typeof entry.typeName === "string" && entry.typeName.length > 0) {
+    node.typeName = entry.typeName;
+  }
+  if (typeof entry.declarationName === "string" && entry.declarationName.length > 0) {
+    node.label = entry.declarationName;
+  }
 
   // Keep geometry internal and derive width automatically from label/type.
   fitNodeWidthToLabel(node);
@@ -207,8 +216,65 @@ export const toExecutionOrderedSerializableGraph = (
           entry.executionOrder = executionOrder;
         }
       }
+      if (node.typeName) {
+        entry.typeName = node.typeName;
+      }
       return entry;
     }),
     connections: graph.connections,
   };
+};
+
+const sanitizeDeclarationName = (value: string): string => {
+  if (!value) {
+    return "";
+  }
+  const compact = value.replace(/[^A-Za-z0-9_]/g, "");
+  if (compact.length === 0) {
+    return "";
+  }
+  return /^[0-9]/.test(compact) ? `_${compact}` : compact;
+};
+
+const addUniqueVariable = (variables: Variable[], variable: Variable): void => {
+  if (!variables.some((entry) => entry.name === variable.name)) {
+    variables.push(variable);
+  }
+};
+
+const isBoxType = (type: CfcNodeType): boolean => type === "box" || type === "box-en-eno";
+
+export const deriveDeclarationsFromNodes = (nodes: CfcNode[]): string => {
+  const variables: Variable[] = [];
+
+  nodes.forEach((node) => {
+    if (node.type === "input" || node.type === "output") {
+      const name = sanitizeDeclarationName(node.label);
+      if (!name) {
+        return;
+      }
+      addUniqueVariable(variables, {
+        name,
+        type: "INT",
+        isElementary: true,
+      });
+      return;
+    }
+
+    if (isBoxType(node.type)) {
+      const name = sanitizeDeclarationName(node.label);
+      const rawTypeName = node.typeName && node.typeName.trim().length > 0 ? node.typeName : node.label;
+      const typeName = sanitizeDeclarationName(rawTypeName);
+      if (!name || !typeName) {
+        return;
+      }
+      addUniqueVariable(variables, {
+        name,
+        type: typeName,
+        isElementary: false,
+      });
+    }
+  });
+
+  return generateDeclarations(variables);
 };

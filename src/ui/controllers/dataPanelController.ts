@@ -1,3 +1,5 @@
+import type { Declarations } from "../../declarations/index.js";
+import { parseDeclarations } from "../../declarations/index.js";
 import { createTextAreaCodeEditorController } from "./textAreaCodeEditorController.js";
 
 interface DataPanelControllerOptions {
@@ -12,6 +14,7 @@ interface DataPanelControllerOptions {
   declarationText: HTMLTextAreaElement;
   declarationLines: HTMLPreElement;
   metrics: HTMLParagraphElement;
+  onDeclarationsChanged?: (declarations: Declarations) => void;
 }
 
 export type DataPanelMode = "data-model" | "declaration";
@@ -30,11 +33,13 @@ export interface DataPanelController {
   getDeclarationText: () => string;
   setMode: (mode: DataPanelMode) => void;
   getMode: () => DataPanelMode;
+  getDeclarations: () => Declarations;
 }
 
 export const createDataPanelController = (options: DataPanelControllerOptions): DataPanelController => {
   let isExpanded = false;
   let mode: DataPanelMode = "data-model";
+  let currentDeclarations: Declarations = parseDeclarations(DEFAULT_DECLARATION_TEXT);
 
   const dataModelEditor = createTextAreaCodeEditorController({
     textArea: options.dataText,
@@ -45,6 +50,12 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
     textArea: options.declarationText,
     lineNumbers: options.declarationLines,
   });
+
+  const updateDeclarations = (): void => {
+    const raw = declarationEditor.getText();
+    currentDeclarations = parseDeclarations(raw);
+    options.onDeclarationsChanged?.(currentDeclarations);
+  };
 
   const updateVisibility = (): void => {
     options.layout.classList.toggle("data-expanded", isExpanded);
@@ -93,10 +104,16 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
     applyMode();
   });
 
+  // Event-Listener für Deklarations-Änderungen
+  options.declarationText.addEventListener("input", () => {
+    updateDeclarations();
+  });
+
   if (options.declarationText.value.trim().length === 0) {
     declarationEditor.setText(DEFAULT_DECLARATION_TEXT);
   }
 
+  updateDeclarations();
   updateVisibility();
   applyMode();
 
@@ -110,6 +127,7 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
     getDataText: () => dataModelEditor.getText(),
     setDeclarationText: (value) => {
       declarationEditor.setText(value);
+      updateDeclarations();
     },
     getDeclarationText: () => declarationEditor.getText(),
     setMode: (nextMode) => {
@@ -120,5 +138,6 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
       applyMode();
     },
     getMode: () => mode,
+    getDeclarations: () => currentDeclarations,
   };
 };

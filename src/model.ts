@@ -27,7 +27,7 @@ export const CFC_NODE_TEMPLATES: CfcNodeTemplate[] = [
   { type: "input", label: "Input", width: 5, height: 2, inputCount: 0, outputCount: 1 },
   { type: "output", label: "Output", width: 5, height: 2, inputCount: 1, outputCount: 0 },
   { type: "box", label: "Box", width: 6, height: 3, inputCount: 2, outputCount: 1 },
-  { type: "box-en-eno", label: "Box with EN/ENO", width: 7, height: 6, inputCount: 3, outputCount: 2 },
+  { type: "box-en-eno", label: "Box with EN/ENO", width: 7, height: 4, inputCount: 3, outputCount: 2 },
   { type: "jump", label: "Jump", width: 4, height: 2, inputCount: 1, outputCount: 0 },
   { type: "label", label: "Label", width: 4, height: 2, inputCount: 0, outputCount: 0 },
   { type: "return", label: "Return", width: 4, height: 2, inputCount: 1, outputCount: 0 },
@@ -59,6 +59,7 @@ export interface CfcNode {
   y: number;
   width: number;
   height: number;
+  typeName?: string; // Name des Typs bei derived-type Variablen (optional, nur bei box/box-en-eno)
 }
 
 export interface CfcConnection {
@@ -73,16 +74,19 @@ export interface CfcGraph {
   version: string;
   nodes: CfcNode[];
   connections: CfcConnection[];
+  declarations: string; // Raw text der Deklarationen (PROGRAM CFC VAR ... END_VAR)
 }
 
 export const createEmptyGraph = (): CfcGraph => ({
   version: "1.0",
   nodes: [],
   connections: [],
+  declarations: "PROGRAM CFC\nVAR\nEND_VAR",
 });
 
 export const cloneGraph = (graph: CfcGraph): CfcGraph => ({
   version: graph.version,
   nodes: graph.nodes.map((node) => ({ ...node })),
   connections: graph.connections.map((connection) => ({ ...connection })),
+  declarations: graph.declarations,
 });

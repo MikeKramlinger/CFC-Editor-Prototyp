@@ -142,9 +142,24 @@ export const createNodeElement = (model: NodeRenderModel, callbacks: NodeRenderC
     outputPorts.push(outputPort);
   }
 
-  const title = document.createElement("div");
-  title.className = "cfc-node__title";
-  title.textContent = node.label;
+  // For derived-type boxes, create a title element showing the instance name above the box
+  const titleElements: HTMLDivElement[] = [];
+  if (node.typeName && (node.type === "box" || node.type === "box-en-eno")) {
+    const instanceEl = document.createElement("div");
+    instanceEl.className = "cfc-node__instance";
+    instanceEl.textContent = node.label;
+    titleElements.push(instanceEl);
+  }
+
+  // Middle title/label inside the box: for Box nodes show typeName, otherwise show node.label
+  const titleEl = document.createElement("div");
+  titleEl.className = "cfc-node__title";
+  if (node.type === "box" || node.type === "box-en-eno") {
+    // Prefer the declared variable name inside the box if available, otherwise show the typeName
+    titleEl.textContent = node.typeName ?? node.label;
+  } else {
+    titleEl.textContent = node.label;
+  }
 
   const id = document.createElement("div");
   id.className = "cfc-node__id";
@@ -155,6 +170,6 @@ export const createNodeElement = (model: NodeRenderModel, callbacks: NodeRenderC
   orderBadge.textContent = String(executionOrder ?? "");
   orderBadge.style.display = executionOrder === null ? "none" : "block";
 
-  nodeElement.append(...inputPorts, orderBadge, title, id, ...outputPorts);
+  nodeElement.append(...titleElements, ...inputPorts, orderBadge, titleEl, id, ...outputPorts);
   return nodeElement;
 };

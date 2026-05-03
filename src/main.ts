@@ -2,6 +2,7 @@ import { CfcEditor } from "./editor.js";
 import { getNextSerialForPrefix } from "./core/editor/id.js";
 import { getStoredLanguage, storeLanguage, t, type UiLanguage } from "./i18n.js";
 import { getAdapterById, listAdapters } from "./formats/registry.js";
+import { renameVariableInDeclarations } from "./declarations/index.js";
 import { createQuizPersistence, type QuizAttemptRecord, type QuizSessionExport } from "./quiz/persistence.js";
 import { SAMPLE_QUIZ_TASKS } from "./quiz/sampleQuiz.js";
 import { createQuizSession } from "./quiz/session.js";
@@ -537,11 +538,24 @@ rebuildQuizTaskSelectOptions();
 const defaultAdapter = adapters[0]!;
 const getCurrentAdapter = () => getAdapterById(toolbarUi.formatSelect.value || defaultAdapter.id);
 
+// Callback-Referenz für Deklarations-Änderungen (wird nach Editor-Erstellung initialisiert)
+let onEditorDeclarationsChanged = () => {
+  // Placeholder - wird später überschrieben
+};
+
 const editor = new CfcEditor(canvas, currentGraph, {
   onGraphChanged: (graph) => {
     currentGraph = graph;
+    // Keep the declaration panel in sync when the graph changes
+    syncDeclarationsFromGraphToPanel();
   },
   onStatus: () => undefined,
+  onNodeDeclarationRenamed: (oldName, newName) => {
+    // Rename variable in declarations
+    const currentDeclarationText = dataPanel.getDeclarationText();
+    const updatedDeclarationText = renameVariableInDeclarations(currentDeclarationText, oldName, newName);
+    dataPanel.setDeclarationText(updatedDeclarationText);
+  },
 });
 
 const quizExpectedPreviewEditor = new CfcEditor(quizExpectedCanvas, createEmptyGraph(), {
@@ -918,7 +932,25 @@ const dataPanel = createDataPanelController({
   declarationText: dataPanelUi.declarationText,
   declarationLines: dataPanelUi.declarationLines,
   metrics: dataPanelUi.metrics,
+  onDeclarationsChanged: (declarations) => {
+    onEditorDeclarationsChanged();
+  },
 });
+
+// Initialisiere Deklarations-Callback und setze initiale Deklarationen
+editor.setDeclarations(dataPanel.getDeclarationText());
+onEditorDeclarationsChanged = () => {
+  editor.setDeclarations(dataPanel.getDeclarationText());
+};
+
+// Funktion, um Deklarationen vom Graph in den DataPanel zu laden
+const syncDeclarationsFromGraphToPanel = (): void => {
+  const graph = editor.getGraph();
+  if (graph.declarations && graph.declarations !== dataPanel.getDeclarationText()) {
+    dataPanel.setDeclarationText(graph.declarations);
+    editor.setDeclarations(graph.declarations);
+  }
+};
 
 const toolbox = createToolboxController({
   workspace: toolboxUi.workspace,
@@ -1565,7 +1597,6 @@ const applyLanguageWorkspaceAndDataArea = (): void => {
 
   dataResizer.setAttribute("aria-label", t(currentLanguage, "dataResizerAriaLabel"));
   dataResizer.setAttribute("title", t(currentLanguage, "dataResizerTitle"));
-  setAttributeBySelector(".data-mode-tabs", "aria-label", t(currentLanguage, "dataModeTabsAriaLabel"));
   dataPanelUi.dataModeModelButton.textContent = t(currentLanguage, "dataModeModel");
   dataPanelUi.dataModeDeclarationButton.textContent = t(currentLanguage, "dataModeDeclaration");
 };

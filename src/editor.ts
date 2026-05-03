@@ -6,6 +6,8 @@ import {
   type CfcNode,
   type CfcNodeType,
 } from "./model.js";
+import type { Variable } from "./declarations/index.js";
+import { parseDeclarations, generateDeclarations, isElementaryType, appendVariableToDeclarations } from "./declarations/index.js";
 import {
   getExecutionOrderByNodeId,
   getExecutionOrderedNodeCount,
@@ -63,6 +65,7 @@ import {
 interface EditorOptions {
   onGraphChanged: (graph: CfcGraph) => void;
   onStatus?: (message: string) => void;
+  onNodeDeclarationRenamed?: (oldName: string, newName: string) => void;
 }
 
 interface GraphMutationFinalizeOptions {
@@ -91,6 +94,7 @@ export class CfcEditor {
   private readonly history: GraphHistory;
 
   private graph: CfcGraph;
+  private currentVariables: Variable[] = [];
   private readonly selectedNodeIds = new Set<string>();
   private readonly selectedConnectionIds = new Set<string>();
   private routingMode: RoutingMode = "astar";
@@ -152,6 +156,10 @@ export class CfcEditor {
     this.graph = cloneGraph(initialGraph);
     this.ensureUniqueGraphIds();
 
+    // Parse Deklarationen
+    const declarations = parseDeclarations(this.graph.declarations);
+    this.currentVariables = declarations.variables;
+
     this.graphLayer = document.createElement("div");
     this.graphLayer.className = "cfc-graph-layer";
     this.contentLayer = document.createElement("div");
@@ -180,6 +188,8 @@ export class CfcEditor {
       getExecutionOrderByNodeId: (nodeId) => this.getExecutionOrderByNodeId(nodeId),
       getExecutionOrderedNodeCount: () => getExecutionOrderedNodeCount(this.graph.nodes),
       setExecutionOrderForNodeId: (nodeId, nextOrder) => this.setExecutionOrderForNodeId(nodeId, nextOrder),
+      getAvailableVariables: () => this.currentVariables,
+      onNodeDeclarationRenamed: this.options.onNodeDeclarationRenamed,
       onBeforeNodeUpdate: () => {
         this.nodeEditHistoryBefore = this.getGraph();
       },
@@ -303,6 +313,12 @@ export class CfcEditor {
     this.nodeEditDialogController.close();
     this.render();
     this.emitGraphChanged();
+  }
+
+  setDeclarations(declarationsRaw: string): void {
+    this.graph.declarations = declarationsRaw;
+    const declarations = parseDeclarations(declarationsRaw);
+    this.currentVariables = declarations.variables;
   }
 
   undo(): boolean {
@@ -441,6 +457,78 @@ export class CfcEditor {
 
   private commitAddedNode(before: CfcGraph, node: CfcNode): void {
     this.graph.nodes.push(node);
+    
+    // Helper: sanitize a display name into a valid identifier for declarations
+    const sanitizeName = (s: string): string => {
+      if (!s) return s;
+      // remove any characters other than letters, digits and underscore
+      const replaced = s.replace(/[^A-Za-z0-9_]/g, "");
+      return /^[0-9]/.test(replaced) ? `_${replaced}` : replaced;
+    };
+
+    // Auto-add declarations for Input/Output nodes
+    if (node.type === "input" || node.type === "output") {
+      const declarations = parseDeclarations(this.graph.declarations);
+      const newVariable: Variable = {
+        name: sanitizeName(node.label),
+        type: "INT",
+        isElementary: true,
+      };
+      // Check if variable already exists
+      if (!declarations.variables.some((v) => v.name === newVariable.name)) {
+        // Append into raw declarations before END_VAR to preserve comments/formatting
+        this.graph.declarations = appendVariableToDeclarations(this.graph.declarations, newVariable);
+        // Persist selection on the node and update cached variables for UI
+        node.label = newVariable.name;
+        this.currentVariables = parseDeclarations(this.graph.declarations).variables;
+      }
+    }
+    // Auto-add declarations for Box nodes (derived type instance names)
+    if (node.type === "box" || node.type === "box-en-eno") {
+      // Use explicit typeName if present, otherwise fall back to label
+      const typeName = node.typeName && node.typeName.length > 0 ? node.typeName : node.label;
+      const sanitizedTypeName = sanitizeName(typeName);
+      const declarations = parseDeclarations(this.graph.declarations);
+
+      // Find highest index for existing variables matching `${typeName}_<n>`
+      const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+      const prefixRe = new RegExp(`^${escapeRegExp(sanitizedTypeName)}_(\\d+)$`);
+      let maxIndex = -1;
+      declarations.variables.forEach((v) => {
+        const m = v.name.match(prefixRe);
+        if (m) {
+          const idx = parseInt(m[1] as string, 10);
+          if (!Number.isNaN(idx) && idx > maxIndex) {
+            maxIndex = idx;
+          }
+        }
+      });
+      const nextIndex = maxIndex + 1;
+      const variableName = `${sanitizedTypeName}_${nextIndex}`;
+
+      const isElem = isElementaryType(typeName);
+      const newVariable: Variable = isElem
+        ? {
+            name: variableName,
+            type: typeName as any,
+            isElementary: true,
+          }
+        : {
+            name: variableName,
+            type: typeName,
+            isElementary: false,
+          };
+
+      if (!declarations.variables.some((v) => v.name === newVariable.name)) {
+        this.graph.declarations = appendVariableToDeclarations(this.graph.declarations, newVariable);
+        // Persist the instance/type info on the node so dialogs and serialization pick it up
+        node.label = variableName;
+        node.typeName = typeName;
+        // Update cached variables so UI sees the new declaration immediately
+        this.currentVariables = parseDeclarations(this.graph.declarations).variables;
+      }
+    }
+    
     this.selectedNodeIds.clear();
     this.selectedConnectionIds.clear();
     this.selectedNodeIds.add(node.id);

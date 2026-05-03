@@ -6,6 +6,7 @@ import type { CfcFormatAdapter } from "./types.js";
 import {
   buildOrderedNodesFromRaw,
   buildValidConnectionsFromRaw,
+  deriveDeclarationsFromNodes,
   isObjectRecord,
   toExecutionOrderedSerializableGraph,
   toStringValue,
@@ -41,6 +42,7 @@ export const jsonFormat: CfcFormatAdapter = {
 
     const nodeIds = new Set(graph.nodes.map((node) => node.id));
     graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
+    graph.declarations = deriveDeclarationsFromNodes(graph.nodes);
 
     return graph;
   },

@@ -27,6 +27,7 @@ const baseGraph: CfcGraph = {
     createNode("N2", "output", 28, 4, "Out"),
   ],
   connections: [],
+  declarations: "PROGRAM CFC\n  In : INT;\n  Out : INT;\nVAR\nEND_VAR",
 };
 
 const expectedTaskAddBoxPositionGraph: CfcGraph = {
@@ -34,9 +35,10 @@ const expectedTaskAddBoxPositionGraph: CfcGraph = {
   nodes: [
     createNode("N1", "input", 2, 4, "In"),
     createNode("N2", "output", 28, 4, "Out"),
-    createNode("N3", "box", 12, 8, "Box 3"),
+    createNode("N3", "box", 12, 8, "Box"),
   ],
   connections: [],
+  declarations: "PROGRAM CFC\n  In : INT;\n  Out : INT;\n  Box : FB;\nVAR\nEND_VAR",
 };
 
 const expectedTaskConnectInputBoxGraph: CfcGraph = {
@@ -55,6 +57,7 @@ const expectedTaskConnectInputBoxGraph: CfcGraph = {
       toPort: "input:0",
     },
   ],
+  declarations: "PROGRAM CFC\n  In : INT;\n  Out : INT;\n  Step : FB;\nVAR\nEND_VAR",
 };
 
 const expectedTaskCleanGraph: CfcGraph = createEmptyGraph();

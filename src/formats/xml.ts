@@ -5,7 +5,7 @@ import {
 } from "../model.js";
 import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
 import type { CfcFormatAdapter } from "./types.js";
-import { buildOrderedNodesFromRaw, buildValidConnectionsFromRaw } from "./shared.js";
+import { buildOrderedNodesFromRaw, buildValidConnectionsFromRaw, deriveDeclarationsFromNodes } from "./shared.js";
 
 const NAMESPACE = "http://www.plcopen.org/xml/tc6_0200";
 
@@ -77,6 +77,9 @@ export const xmlFormat: CfcFormatAdapter = {
       }
       nodeElement.setAttribute("x", String(node.x));
       nodeElement.setAttribute("y", String(node.y));
+      if (node.typeName) {
+        nodeElement.setAttribute("typeName", node.typeName);
+      }
       nodes.append(nodeElement);
     });
 
@@ -123,6 +126,14 @@ export const xmlFormat: CfcFormatAdapter = {
       if (nodeElement.hasAttribute("executionOrder")) {
         nodeRaw.executionOrder = Math.max(1, Math.floor(parseNumberAttr(nodeElement, "executionOrder", sourceIndex + 1)));
       }
+      const typeName = nodeElement.getAttribute("typeName");
+      if (typeName) {
+        nodeRaw.typeName = typeName;
+      }
+      const declarationName = nodeElement.getAttribute("declarationName");
+      if (declarationName) {
+        nodeRaw.label = declarationName;
+      }
       return nodeRaw;
     });
 
@@ -143,6 +154,7 @@ export const xmlFormat: CfcFormatAdapter = {
 
     const nodeIds = new Set(graph.nodes.map((node) => node.id));
     graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
+    graph.declarations = deriveDeclarationsFromNodes(graph.nodes);
 
     return graph;
   },

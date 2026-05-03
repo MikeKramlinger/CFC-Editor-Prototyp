@@ -1,4 +1,6 @@
 import type { CfcNode } from "../../model.js";
+import type { Variable } from "../../declarations/index.js";
+import { getCompatibleVariables } from "../../declarations/index.js";
 import { createNodeEditDialog } from "../views/nodeEditDialogUi.js";
 
 interface NodeEditDialogControllerOptions {
@@ -11,6 +13,8 @@ interface NodeEditDialogControllerOptions {
   setExecutionOrderForNodeId: (nodeId: string, nextOrder: number) => void;
   onBeforeNodeUpdate: (node: CfcNode) => void;
   onNodeUpdated: (node: CfcNode) => void;
+  getAvailableVariables?: () => Variable[];
+  onNodeDeclarationRenamed?: (oldName: string, newName: string) => void;
 }
 
 export interface NodeEditDialogController {
@@ -99,20 +103,39 @@ export const createNodeEditDialogController = (
     const nodeTopPx = options.unitToPx(node.y);
     const nodeBottomPx = options.unitToPx(node.y + node.height);
 
+    // Provide compatible variables so the dialog can show Declaration dropdown
+    const availableVariables = options.getAvailableVariables?.() ?? [];
+    const compatibleVariables = getCompatibleVariables(node.type, availableVariables);
+
     const dialogHandle = createNodeEditDialog({
       initialLabel: node.label,
       executionOrder,
       maxExecutionOrder: options.getExecutionOrderedNodeCount(),
       leftPx: nodeCenterXPx,
       topPx: nodeTopPx,
+      compatibleVariables,
       onCancel: () => {
         close();
       },
-      onSubmit: ({ label, executionOrder: nextExecutionOrder }) => {
+      onSubmit: ({ label, executionOrder: nextExecutionOrder, typeName }) => {
         options.onBeforeNodeUpdate(node);
 
         if (label.length > 0) {
+          const previousLabel = node.label;
           node.label = label;
+
+          // Only call renaming callback if the new label is NOT an existing variable in declarations
+          // If it's an existing variable, it's a "reassignment", not a "rename"
+          if (previousLabel !== label && options.onNodeDeclarationRenamed) {
+            const isExistingVariable = compatibleVariables.some((v) => v.name === label);
+            if (!isExistingVariable) {
+              options.onNodeDeclarationRenamed(previousLabel, label);
+            }
+          }
+
+          if (typeName) {
+            node.typeName = typeName;
+          }
         }
 
         if (nextExecutionOrder !== null) {
