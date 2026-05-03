@@ -37,7 +37,7 @@ import {
   intersectsSelectionRect,
   toSelectionBoxSize,
 } from "./core/editor/selection.js";
-import { getNextSerialForPrefix } from "./core/editor/id.js";
+import { getNextSerialForPrefix, getNextLabelIndexForNodeType } from "./core/editor/id.js";
 import { type ConnectionDragState } from "./core/editor/connection.js";
 import { type ConnectionPortKind } from "./core/editor/connection.js";
 import {
@@ -442,10 +442,11 @@ export class CfcEditor {
 
   private createNodeForType(nodeType: CfcNodeType, nextIndex: number, x: number, y: number): CfcNode {
     const template = getNodeTemplateByType(nodeType);
+    const labelIndex = getNextLabelIndexForNodeType(this.graph, nodeType);
     const node: CfcNode = {
       id: `N${nextIndex}`,
       type: nodeType,
-      label: `${template.label} ${nextIndex}`,
+      label: `${template.label} ${labelIndex}`,
       x,
       y,
       width: template.width,

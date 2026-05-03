@@ -10,6 +10,7 @@ export interface DataPanelUiElements {
   dataLines: HTMLPreElement;
   declarationText: HTMLTextAreaElement;
   declarationLines: HTMLPreElement;
+  declarationSyntax: HTMLPreElement;
   dataToggleButton: HTMLButtonElement;
   metrics: HTMLParagraphElement;
 }
@@ -24,6 +25,7 @@ export const getDataPanelUiElements = (): DataPanelUiElements => ({
   dataLines: query<HTMLPreElement>("#data-lines"),
   declarationText: query<HTMLTextAreaElement>("#declaration-text"),
   declarationLines: query<HTMLPreElement>("#declaration-lines"),
+  declarationSyntax: query<HTMLPreElement>("#declaration-syntax"),
   dataToggleButton: query<HTMLButtonElement>("#data-toggle"),
   metrics: query<HTMLParagraphElement>("#metrics"),
 });

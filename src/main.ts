@@ -1,5 +1,5 @@
 import { CfcEditor } from "./editor.js";
-import { getNextSerialForPrefix } from "./core/editor/id.js";
+import { getNextSerialForPrefix, getNextLabelIndexForNodeType } from "./core/editor/id.js";
 import { getStoredLanguage, storeLanguage, t, type UiLanguage } from "./i18n.js";
 import { getAdapterById, listAdapters } from "./formats/registry.js";
 import { renameVariableInDeclarations } from "./declarations/index.js";
@@ -931,6 +931,7 @@ const dataPanel = createDataPanelController({
   dataLines: dataPanelUi.dataLines,
   declarationText: dataPanelUi.declarationText,
   declarationLines: dataPanelUi.declarationLines,
+  declarationSyntax: dataPanelUi.declarationSyntax,
   metrics: dataPanelUi.metrics,
   onDeclarationsChanged: (declarations) => {
     onEditorDeclarationsChanged();
@@ -1007,12 +1008,13 @@ const createBoxesAndConnections = (
       "N",
       nextGraph.nodes.map((node) => node.id),
     );
+    const labelIndex = getNextLabelIndexForNodeType(nextGraph, nodeType);
     const row = Math.floor(index / columnCount);
     const col = index % columnCount;
     const node: CfcNode = {
       id: `N${serial}`,
       type: nodeType,
-      label: `${template.label} ${serial}`,
+      label: `${template.label} ${labelIndex}`,
       x: 2 + col * (maxTemplateWidth + 3),
       y: baseY + row * (maxTemplateHeight + 3),
       width: template.width,

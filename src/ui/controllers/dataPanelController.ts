@@ -13,6 +13,7 @@ interface DataPanelControllerOptions {
   dataLines: HTMLPreElement;
   declarationText: HTMLTextAreaElement;
   declarationLines: HTMLPreElement;
+  declarationSyntax: HTMLPreElement;
   metrics: HTMLParagraphElement;
   onDeclarationsChanged?: (declarations: Declarations) => void;
 }
@@ -49,6 +50,8 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
   const declarationEditor = createTextAreaCodeEditorController({
     textArea: options.declarationText,
     lineNumbers: options.declarationLines,
+    highlightLayer: options.declarationSyntax ?? undefined,
+    highlightKeywords: ["PROGRAM", "VAR", "END_VAR"],
   });
 
   const updateDeclarations = (): void => {

@@ -14,9 +14,17 @@ const clampDataEditorHeight = (height: number, minHeightPx: number, maxHeightVie
 export const installDataAreaResize = (options: DataAreaResizeOptions): void => {
   const minHeightPx = options.minHeightPx ?? 140;
   const maxHeightViewportRatio = options.maxHeightViewportRatio ?? 0.7;
+  let currentHeightPx = minHeightPx;
+
+  const readAppliedHeight = (): number => {
+    const rawHeight = getComputedStyle(document.documentElement).getPropertyValue("--data-editor-height").trim();
+    const parsedHeight = Number.parseInt(rawHeight, 10);
+    return Number.isNaN(parsedHeight) ? currentHeightPx : parsedHeight;
+  };
 
   const applyDataEditorHeight = (height: number, persist = true): void => {
     const clamped = clampDataEditorHeight(height, minHeightPx, maxHeightViewportRatio);
+    currentHeightPx = clamped;
     document.documentElement.style.setProperty("--data-editor-height", `${clamped}px`);
     if (persist) {
       localStorage.setItem(options.storageKey, String(clamped));
@@ -63,7 +71,7 @@ export const installDataAreaResize = (options: DataAreaResizeOptions): void => {
     }
     event.preventDefault();
     dragStartY = event.clientY;
-    dragStartHeight = options.dataEditor.getBoundingClientRect().height;
+    dragStartHeight = readAppliedHeight();
     options.resizer.setPointerCapture(event.pointerId);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);

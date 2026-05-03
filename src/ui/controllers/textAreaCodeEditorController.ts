@@ -1,6 +1,8 @@
 interface TextAreaCodeEditorControllerOptions {
   textArea: HTMLTextAreaElement;
   lineNumbers: HTMLPreElement;
+  highlightLayer?: HTMLElement;
+  highlightKeywords?: string[];
 }
 
 export interface TextAreaCodeEditorController {
@@ -178,6 +180,52 @@ const insertNewLineWithAutoIndent = (textarea: HTMLTextAreaElement): void => {
   replaceTextRange(textarea, selectionStart, selectionEnd, `\n${indent}`, "end");
 };
 
+const highlightKeywordsInLayer = (text: string, keywords: string[], layer: HTMLElement): void => {
+  if (!keywords || keywords.length === 0) {
+    layer.innerHTML = "";
+    return;
+  }
+
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // Create a regex that matches whole words only (case-insensitive)
+  const keywordPattern = keywords.map((kw) => kw.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")).join("|");
+  const regex = new RegExp(`\\b(${keywordPattern})\\b`, "gi");
+
+  // Walk through matches and build escaped HTML, wrapping matched keywords
+  const parts: (string | { keyword: true; text: string })[] = [];
+  let lastIndex = 0;
+
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    const match = m[0];
+    const offset = m.index;
+    if (offset > lastIndex) {
+      parts.push(text.slice(lastIndex, offset));
+    }
+    parts.push({ keyword: true, text: match });
+    lastIndex = offset + match.length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  const html = parts
+    .map((part) => {
+      if (typeof part === "string") {
+        // escape non-keyword parts and preserve newlines
+        return escapeHtml(part).split("\n").join("<br>");
+      }
+      return `<span class="syntax-keyword">${escapeHtml(part.text)}</span>`;
+    })
+    .join("");
+
+  layer.innerHTML = html;
+  layer.scrollTop = (layer.parentElement as HTMLElement)?.querySelector("textarea")?.scrollTop ?? 0;
+};
+
 export const createTextAreaCodeEditorController = (
   options: TextAreaCodeEditorControllerOptions,
 ): TextAreaCodeEditorController => {
@@ -191,10 +239,16 @@ export const createTextAreaCodeEditorController = (
 
   options.textArea.addEventListener("input", () => {
     updateLineNumbers();
+    if (options.highlightLayer && options.highlightKeywords) {
+      highlightKeywordsInLayer(options.textArea.value, options.highlightKeywords, options.highlightLayer);
+    }
   });
 
   options.textArea.addEventListener("scroll", () => {
     options.lineNumbers.scrollTop = options.textArea.scrollTop;
+    if (options.highlightLayer) {
+      options.highlightLayer.scrollTop = options.textArea.scrollTop;
+    }
   });
 
   options.textArea.addEventListener("keydown", (event) => {
@@ -264,6 +318,9 @@ export const createTextAreaCodeEditorController = (
   });
 
   updateLineNumbers();
+  if (options.highlightLayer && options.highlightKeywords) {
+    highlightKeywordsInLayer(options.textArea.value, options.highlightKeywords, options.highlightLayer);
+  }
 
   return {
     updateLineNumbers,
@@ -286,6 +343,9 @@ export const createTextAreaCodeEditorController = (
       options.textArea.scrollTop = previousScrollTop;
       options.textArea.scrollLeft = previousScrollLeft;
       updateLineNumbers();
+      if (options.highlightLayer && options.highlightKeywords) {
+        highlightKeywordsInLayer(options.textArea.value, options.highlightKeywords, options.highlightLayer);
+      }
     },
     getText: () => options.textArea.value,
   };
