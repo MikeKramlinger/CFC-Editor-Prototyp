@@ -1,6 +1,7 @@
 import type { CfcNode } from "../../model.js";
 import type { Variable } from "../../declarations/index.js";
 import { getCompatibleVariables } from "../../declarations/index.js";
+import { sanitizeName } from "../../declarations/parser.js";
 import { createNodeEditDialog } from "../views/nodeEditDialogUi.js";
 
 interface NodeEditDialogControllerOptions {
@@ -120,21 +121,27 @@ export const createNodeEditDialogController = (
       onSubmit: ({ label, executionOrder: nextExecutionOrder, typeName }) => {
         options.onBeforeNodeUpdate(node);
 
-        if (label.length > 0) {
+        const nextLabel = node.type === "box" || node.type === "box-en-eno" ? sanitizeName(label) : label;
+        const nextTypeName =
+          node.type === "box" || node.type === "box-en-eno"
+            ? sanitizeName(typeName ?? node.typeName ?? "")
+            : typeName;
+
+        if (nextLabel.length > 0) {
           const previousLabel = node.label;
-          node.label = label;
+          node.label = nextLabel;
 
           // Only call renaming callback if the new label is NOT an existing variable in declarations
           // If it's an existing variable, it's a "reassignment", not a "rename"
-          if (previousLabel !== label && options.onNodeDeclarationRenamed) {
-            const isExistingVariable = compatibleVariables.some((v) => v.name === label);
+          if (previousLabel !== nextLabel && options.onNodeDeclarationRenamed) {
+            const isExistingVariable = compatibleVariables.some((v) => v.name === nextLabel);
             if (!isExistingVariable) {
-              options.onNodeDeclarationRenamed(previousLabel, label);
+              options.onNodeDeclarationRenamed(previousLabel, nextLabel);
             }
           }
 
-          if (typeName) {
-            node.typeName = typeName;
+          if (typeof nextTypeName === "string" && nextTypeName.length > 0) {
+            node.typeName = nextTypeName;
           }
         }
 

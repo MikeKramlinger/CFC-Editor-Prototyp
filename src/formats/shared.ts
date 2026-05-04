@@ -65,12 +65,13 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
     type = entry.type;
   }
   const template = getNodeTemplateByType(type);
+  const isBoxNode = type === "box" || type === "box-en-eno";
   const hasExplicitExecutionOrder = Object.prototype.hasOwnProperty.call(entry, "executionOrder");
   const executionOrder = Math.max(1, Math.floor(toFiniteNumber(entry.executionOrder, index + 1)));
   const node: CfcNode = {
     id: toStringValue(entry.id, `N${index + 1}`),
     type,
-    label: toStringValue(entry.label, "Block"),
+    label: isBoxNode ? sanitizeDeclarationName(toStringValue(entry.label, "Block")) || "Block" : toStringValue(entry.label, "Block"),
     x: toFiniteNumber(entry.x),
     y: toFiniteNumber(entry.y),
     width: template.width,
@@ -78,10 +79,10 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
   };
 
   if (typeof entry.typeName === "string" && entry.typeName.length > 0) {
-    node.typeName = entry.typeName;
+    node.typeName = isBoxNode ? sanitizeDeclarationName(entry.typeName) || undefined : entry.typeName;
   }
   if (typeof entry.declarationName === "string" && entry.declarationName.length > 0) {
-    node.label = entry.declarationName;
+    node.label = isBoxNode ? sanitizeDeclarationName(entry.declarationName) || node.label : entry.declarationName;
   }
 
   // Keep geometry internal and derive width automatically from label/type.

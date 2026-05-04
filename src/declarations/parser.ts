@@ -58,9 +58,9 @@ export const parseDeclarations = (raw: string): Declarations => {
     }
 
     // Variablendeklaration parsen
-    const variableResult = parseVariableDeclaration(trimmed, lineNumber);
-    if (variableResult.error) {
-      errors.push(variableResult.error);
+    const variableResult = parseVariableDeclaration(line, lineNumber);
+    if (variableResult.errors) {
+      errors.push(...variableResult.errors);
     } else if (variableResult.variable) {
       // Duplikate verhindern
       if (!variables.some((v) => v.name === variableResult.variable!.name)) {
@@ -86,7 +86,7 @@ export const parseDeclarations = (raw: string): Declarations => {
 
 interface ParseVariableResult {
   variable?: Variable;
-  error?: DeclarationError;
+  errors?: DeclarationError[];
 }
 
 /**
@@ -106,47 +106,74 @@ const parseVariableDeclaration = (line: string, lineNumber: number): ParseVariab
   const colonIndex = trimmed.indexOf(":");
   if (colonIndex === -1) {
     return {
-      error: {
-        line: lineNumber,
-        message: `Missing ':' in variable declaration: ${trimmed}`,
-      },
+      errors: [
+        {
+          line: lineNumber,
+          message: `Missing ':' in variable declaration: ${trimmed}`,
+        }
+      ],
     };
   }
 
   const nameRaw = trimmed.slice(0, colonIndex).trim();
   const typeRaw = trimmed.slice(colonIndex + 1).trim();
+  const nameStartIndex = line.indexOf(nameRaw);
+  const typeStartIndex = typeRaw.length > 0 ? line.indexOf(typeRaw, colonIndex) : -1;
+
+  const createError = (
+    message: string,
+    startIndex: number,
+    length: number,
+  ): DeclarationError => ({
+    line: lineNumber,
+    message,
+    startColumn: startIndex >= 0 ? startIndex + 1 : undefined,
+    endColumn: startIndex >= 0 ? startIndex + 1 + Math.max(0, length) : undefined,
+  });
+
+  const errors: DeclarationError[] = [];
 
   // Validierungen
   if (!nameRaw) {
-    return {
-      error: {
-        line: lineNumber,
-        message: "Variable name is empty",
-      },
-    };
+    errors.push({
+      line: lineNumber,
+      message: "Variable name is empty",
+    });
   }
 
   if (!typeRaw) {
-    return {
-      error: {
-        line: lineNumber,
-        message: "Variable type is empty",
-      },
-    };
+    errors.push({
+      line: lineNumber,
+      message: "Variable type is empty",
+    });
   }
 
   // Variablennamen validieren (alphanumerisch + Unterstrich, nicht mit Zahl anfangen)
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(nameRaw)) {
-    return {
-      error: {
-        line: lineNumber,
-        message: `Invalid variable name: ${nameRaw}. Must start with letter or underscore, contain only alphanumeric characters and underscores.`,
-      },
-    };
+  if (nameRaw && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(nameRaw)) {
+    errors.push(
+      createError(
+        `Invalid variable name: ${nameRaw}. Must start with letter or underscore, contain only alphanumeric characters and underscores.`,
+        nameStartIndex,
+        nameRaw.length,
+      ),
+    );
   }
 
   // Typ bestimmen
   const isElementary = isElementaryType(typeRaw);
+  if (typeRaw && !isElementary && sanitizeName(typeRaw) !== typeRaw) {
+    errors.push(
+      createError(
+        `Invalid derived type name: ${typeRaw}. Derived types must not contain whitespace or other invalid characters.`,
+        typeStartIndex,
+        typeRaw.length,
+      ),
+    );
+  }
+
+  if (errors.length > 0) {
+    return { errors };
+  }
 
   const variable: Variable = isElementary
     ? {

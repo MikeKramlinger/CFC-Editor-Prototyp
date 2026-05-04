@@ -57,10 +57,56 @@ describe("node edit dialog integration", () => {
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 
     expect(onBeforeNodeUpdate).toHaveBeenCalledWith(node);
-    expect(node.label).toBe("New Name");
+    expect(node.label).toBe("NewName");
     expect(setExecutionOrderForNodeId).toHaveBeenCalledWith("N1", 4);
     expect(onNodeUpdated).toHaveBeenCalledWith(node);
     expect(nodeLayer.querySelector(".cfc-node-edit-dialog")).toBeNull();
+  });
+
+  it("normalizes box labels and type names on submit", () => {
+    const canvas = document.createElement("div") as HTMLDivElement;
+    const nodeLayer = document.createElement("div") as HTMLDivElement;
+    document.body.append(canvas, nodeLayer);
+
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 600,
+      width: 800,
+      height: 600,
+      toJSON: () => ({}),
+    });
+
+    const controller = createNodeEditDialogController({
+      canvas,
+      nodeLayer,
+      unitToPx: (value) => value * 10,
+      getZoom: () => 1,
+      getExecutionOrderByNodeId: () => null,
+      getExecutionOrderedNodeCount: () => 0,
+      setExecutionOrderForNodeId: () => undefined,
+      onBeforeNodeUpdate: () => undefined,
+      onNodeUpdated: () => undefined,
+    });
+
+    const node = createNode("N3", "box", 2, 2, {
+      label: "Old Name",
+      typeName: "Derived Type Name",
+    });
+    controller.open(node);
+
+    const dialog = nodeLayer.querySelector(".cfc-node-edit-dialog") as HTMLDivElement;
+    const inputs = dialog.querySelectorAll<HTMLInputElement>("input");
+    inputs[0]!.value = "New Box Name";
+
+    const form = dialog.querySelector("form") as HTMLFormElement;
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(node.label).toBe("NewBoxName");
+    expect(node.typeName).toBe("DerivedTypeName");
   });
 
   it("closes dialog on cancel", () => {

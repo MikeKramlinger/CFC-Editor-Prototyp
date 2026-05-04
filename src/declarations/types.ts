@@ -91,6 +91,8 @@ export interface Declarations {
 export interface DeclarationError {
   line: number;
   message: string;
+  startColumn?: number;
+  endColumn?: number;
 }
 
 /**

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createDataPanelController } from "../../src/ui/controllers/dataPanelController.js";
 
 const createFixture = () => {
@@ -213,5 +213,79 @@ describe("data panel controller", () => {
     const { declarationText } = createFixture();
 
     expect(declarationText.value).toBe("PROGRAM CFC\nVAR\nEND_VAR");
+  });
+
+  it("shows inline declaration errors with tooltip metadata", () => {
+    const { declarationText, controller } = createFixture();
+
+    declarationText.value = [
+      "PROGRAM CFC",
+      "VAR",
+      "    bad name : FB_OK;",
+      "    okName : FB Type;",
+      "END_VAR",
+    ].join("\n");
+
+    declarationText.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(controller.getDeclarations().isValid).toBe(false);
+    const syntax = document.querySelector<HTMLPreElement>("#declaration-syntax")!;
+    expect(syntax.innerHTML).toContain("declaration-error");
+    expect(syntax.innerHTML).toContain("Invalid variable name: bad name");
+    expect(syntax.innerHTML).toContain("Invalid derived type name: FB Type");
+  });
+
+  it("shows multiple inline errors on the same declaration line", () => {
+    const { declarationText, controller } = createFixture();
+
+    declarationText.value = [
+      "PROGRAM CFC",
+      "VAR",
+      "    Box 1_0 : Box 1;",
+      "END_VAR",
+    ].join("\n");
+
+    declarationText.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(controller.getDeclarations().isValid).toBe(false);
+    const syntax = document.querySelector<HTMLPreElement>("#declaration-syntax")!;
+    expect(syntax.innerHTML.match(/declaration-error/g)?.length).toBe(2);
+    expect(syntax.innerHTML).toContain("Invalid variable name: Box 1_0");
+    expect(syntax.innerHTML).toContain("Invalid derived type name: Box 1");
+  });
+
+  it("moves the caret to an error when clicking the highlighted text", () => {
+    const { declarationText } = createFixture();
+
+    declarationText.value = [
+      "PROGRAM CFC",
+      "VAR",
+      "    Box 1_0 : Box 1;",
+      "END_VAR",
+    ].join("\n");
+
+    declarationText.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const line = document.querySelectorAll<HTMLElement>("#declaration-syntax .declaration-line")[2]!;
+    vi.spyOn(line, "getBoundingClientRect").mockReturnValue({
+      x: 100,
+      y: 20,
+      left: 100,
+      top: 20,
+      right: 300,
+      bottom: 40,
+      width: 200,
+      height: 20,
+      toJSON: () => ({}),
+    });
+
+    const syntaxError = document.querySelector<HTMLSpanElement>("#declaration-syntax .declaration-error")!;
+    syntaxError.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientX: 185 }),
+    );
+
+    expect(document.activeElement).toBe(declarationText);
+    expect(declarationText.selectionStart).toBeGreaterThan(declarationText.value.indexOf("Box 1_0"));
+    expect(declarationText.selectionStart).toBe(declarationText.selectionEnd);
   });
 });

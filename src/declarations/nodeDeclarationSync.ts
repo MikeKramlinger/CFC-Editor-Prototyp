@@ -71,17 +71,17 @@ export const syncCreatedNodeDeclaration = (
     );
     const newVariable = isElementaryType(typeName)
       ? makeElementaryVariable(variableName)
-      : makeDerivedVariable(variableName, typeName);
+      : makeDerivedVariable(variableName, sanitizedTypeName || sanitizeName(node.label));
 
     if (!declarations.variables.some((variable) => variable.name === newVariable.name)) {
       return {
         declarations: appendVariableToDeclarations(declarationsText, newVariable),
         label: variableName,
-        typeName,
+        typeName: newVariable.isElementary ? typeName : newVariable.type,
       };
     }
 
-    return { declarations: declarationsText, label: variableName, typeName };
+    return { declarations: declarationsText, label: variableName, typeName: newVariable.isElementary ? typeName : newVariable.type };
   }
 
   return {

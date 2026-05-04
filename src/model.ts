@@ -51,15 +51,21 @@ export const isCfcNodeType = (value: string): value is CfcNodeType => nodeTempla
 export const getNodeTemplateByType = (type: CfcNodeType): CfcNodeTemplate =>
   nodeTemplateMap.get(type) ?? nodeTemplateMap.get(DEFAULT_NODE_TYPE)!;
 
+/**
+ * Normalized node text used for box labels and derived type names.
+ * Callers should store whitespace-free values here.
+ */
+export type NormalizedNodeName = string;
+
 export interface CfcNode {
   id: string;
   type: CfcNodeType;
-  label: string;
+  label: NormalizedNodeName;
   x: number;
   y: number;
   width: number;
   height: number;
-  typeName?: string; // Name des Typs bei derived-type Variablen (optional, nur bei box/box-en-eno)
+  typeName?: NormalizedNodeName;
 }
 
 export interface CfcConnection {

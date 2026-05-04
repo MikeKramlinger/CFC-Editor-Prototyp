@@ -31,6 +31,28 @@ describe("instanceName and typeName serialization", () => {
       expect(deserializedNode.label).toBe("MyBox");
     });
 
+    it("should normalize whitespace in imported box label and typeName", () => {
+      const graph = createEmptyGraph();
+      graph.nodes.push({
+        id: "N1",
+        type: "box",
+        label: "My Box",
+        x: 10,
+        y: 20,
+        width: 80,
+        height: 60,
+        typeName: "Derived Type Name",
+      });
+
+      const serialized = jsonFormat.serialize(graph);
+      const deserialized = jsonFormat.deserialize(serialized);
+
+      const deserializedNode = deserialized.nodes[0];
+      expect(deserializedNode).toBeDefined();
+      expect(deserializedNode.label).toBe("MyBox");
+      expect(deserializedNode.typeName).toBe("DerivedTypeName");
+    });
+
     it("should handle nodes without typeName", () => {
       const graph = createEmptyGraph();
       const inputNode: CfcNode = {

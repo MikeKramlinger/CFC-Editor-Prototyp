@@ -404,3 +404,7 @@ body[data-theme="dark"] .data-lines {
 body[data-theme="dark"] .syntax-keyword {
   color: #ce9178;
 }
+
+body[data-theme="dark"] .declaration-error {
+  text-decoration-color: #ff7b7b;
+}
