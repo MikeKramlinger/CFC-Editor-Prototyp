@@ -57,8 +57,23 @@ const isImmediateReverse = (currentDir: number, nextDir: number): boolean => {
   );
 };
 
-const pointKey = (point: GridPoint): string => `${point.x},${point.y}`;
-const stateKey = (state: RouteState): string => `${state.x},${state.y},${state.dir}`;
+const encodeCellKey = (minX: number, minY: number, gridHeight: number, x: number, y: number): number => {
+  return (x - minX) * gridHeight + (y - minY);
+};
+
+const buildStateKey = (cellKey: number, dir: number): number => {
+  return cellKey * 4 + dir;
+};
+
+const decodeCellKey = (cellKey: number, minX: number, minY: number, gridHeight: number): GridPoint => {
+  const x = Math.floor(cellKey / gridHeight) + minX;
+  const y = (cellKey % gridHeight) + minY;
+  return { x, y };
+};
+
+const cellIndex = (x: number, y: number, bounds: { minX: number; minY: number; maxY: number }): number => {
+  return (x - bounds.minX) * (bounds.maxY - bounds.minY + 1) + (y - bounds.minY);
+};
 
 class MinOpenHeap {
   private readonly values: OpenEntry[] = [];
@@ -123,18 +138,25 @@ class MinOpenHeap {
   }
 }
 
-const buildBlockedCells = (nodes: RoutingObstacleNode[], allowKeys: Set<string>): Set<string> => {
-  const blocked = new Set<string>();
+const buildBlockedCells = (
+  nodes: RoutingObstacleNode[],
+  allowKeys: Set<number>,
+  buildKey: (x: number, y: number) => number,
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+): Uint8Array => {
+  const width = bounds.maxX - bounds.minX + 1;
+  const height = bounds.maxY - bounds.minY + 1;
+  const blocked = new Uint8Array(width * height);
   nodes.forEach((node) => {
-      const startX = Math.floor(node.x);
-      const endX = Math.ceil(node.x + node.width);
-      const startY = Math.floor(node.y);
-      const endY = Math.ceil(node.y + node.height);
+    const startX = Math.floor(node.x);
+    const endX = Math.ceil(node.x + node.width);
+    const startY = Math.floor(node.y);
+    const endY = Math.ceil(node.y + node.height);
     for (let x = startX; x <= endX; x += 1) {
       for (let y = startY; y <= endY; y += 1) {
-        const key = `${x},${y}`;
+        const key = buildKey(x, y);
         if (!allowKeys.has(key)) {
-          blocked.add(key);
+          blocked[cellIndex(x, y, bounds)] = 1;
         }
       }
     }
@@ -191,15 +213,23 @@ const buildSearchBounds = (
     return { minX, maxX, minY, maxY };
   }
 
-  const nodeMinX = Math.floor(Math.min(...nodes.map((node) => node.x), start.x, end.x));
-  const nodeMaxX = Math.ceil(Math.max(...nodes.map((node) => node.x + node.width), start.x, end.x));
-  const nodeMinY = Math.floor(Math.min(...nodes.map((node) => node.y), start.y, end.y));
-  const nodeMaxY = Math.ceil(Math.max(...nodes.map((node) => node.y + node.height), start.y, end.y));
+  let minX = Math.min(start.x, end.x);
+  let maxX = Math.max(start.x, end.x);
+  let minY = Math.min(start.y, end.y);
+  let maxY = Math.max(start.y, end.y);
+
+  for (const node of nodes) {
+    minX = Math.min(minX, node.x);
+    maxX = Math.max(maxX, node.x + node.width);
+    minY = Math.min(minY, node.y);
+    maxY = Math.max(maxY, node.y + node.height);
+  }
+
   return {
-    minX: nodeMinX - searchMargin,
-    maxX: nodeMaxX + searchMargin,
-    minY: nodeMinY - searchMargin,
-    maxY: nodeMaxY + searchMargin,
+    minX: Math.floor(minX) - searchMargin,
+    maxX: Math.ceil(maxX) + searchMargin,
+    minY: Math.floor(minY) - searchMargin,
+    maxY: Math.ceil(maxY) + searchMargin,
   };
 };
 
@@ -223,15 +253,22 @@ const runAStarWithBounds = (params: {
   start: GridPoint;
   startExit: GridPoint;
   end: GridPoint;
-  blocked: Set<string>;
-  allowKeys: Set<string>;
+  blocked: Uint8Array;
+  allowKeys: Set<number>;
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
+  blockedBounds: { minX: number; maxX: number; minY: number; maxY: number };
   bendPenalty: number;
+  buildCellKey: (x: number, y: number) => number;
+  decodeCellKey: (cellKey: number) => GridPoint;
+  gridHeight: number;
 }): GridPoint[] | null => {
-  const { start, startExit, end, blocked, allowKeys, bounds, bendPenalty } = params;
+  const { start, startExit, end, blocked, allowKeys, bounds, blockedBounds, bendPenalty, buildCellKey, decodeCellKey } = params;
 
   const inBounds = (point: GridPoint): boolean =>
     point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY;
+  const isBlocked = (point: GridPoint): boolean => {
+    return blocked[cellIndex(point.x, point.y, blockedBounds)] === 1;
+  };
 
   const heuristic = (point: GridPoint): number => Math.abs(point.x - end.x) + Math.abs(point.y - end.y);
   const totalDeltaX = Math.abs(end.x - startExit.x);
@@ -242,10 +279,11 @@ const runAStarWithBounds = (params: {
   const open = new MinOpenHeap();
   open.push({ state: startState, g: 0, f: heuristic(startExit) });
 
-  const bestG = new Map<string, number>([[stateKey(startState), 0]]);
-  const closed = new Set<string>();
-  const cameFrom = new Map<string, string>();
-  let endStateKey: string | null = null;
+  const startCellKey = buildCellKey(startState.x, startState.y);
+  const bestG = new Map<number, number>([[buildStateKey(startCellKey, startState.dir), 0]]);
+  const closed = new Set<number>();
+  const cameFrom = new Map<number, number>();
+  let endStateKey: number | null = null;
 
   while (open.size > 0) {
     const current = open.pop();
@@ -253,7 +291,8 @@ const runAStarWithBounds = (params: {
       break;
     }
 
-    const currentKey = stateKey(current.state);
+    const currentCellKey = buildCellKey(current.state.x, current.state.y);
+    const currentKey = buildStateKey(currentCellKey, current.state.dir);
     if (closed.has(currentKey)) {
       continue;
     }
@@ -277,8 +316,8 @@ const runAStarWithBounds = (params: {
         continue;
       }
 
-      const nextPointKey = pointKey(nextPoint);
-      if (blocked.has(nextPointKey) && !allowKeys.has(nextPointKey)) {
+      const nextPointKey = buildCellKey(nextPoint.x, nextPoint.y);
+      if (isBlocked(nextPoint) && !allowKeys.has(nextPointKey)) {
         continue;
       }
 
@@ -289,7 +328,7 @@ const runAStarWithBounds = (params: {
           : 0;
       const tentativeG = current.g + 1 + bendCost + horizontalCost;
       const nextState: RouteState = { x: nextPoint.x, y: nextPoint.y, dir: direction.dir };
-      const nextStateKey = stateKey(nextState);
+      const nextStateKey = buildStateKey(nextPointKey, nextState.dir);
 
       const knownCost = bestG.get(nextStateKey);
       if (knownCost !== undefined && tentativeG >= knownCost) {
@@ -302,15 +341,15 @@ const runAStarWithBounds = (params: {
     }
   }
 
-  if (!endStateKey) {
+  if (endStateKey === null) {
     return null;
   }
 
   const reconstructed: GridPoint[] = [];
-  let currentKey: string | undefined = endStateKey;
-  while (currentKey) {
-    const parts = currentKey.split(",");
-    reconstructed.push({ x: Number(parts[0] ?? 0), y: Number(parts[1] ?? 0) });
+  let currentKey: number | undefined = endStateKey;
+  while (currentKey !== undefined) {
+    const cellKey = Math.floor(currentKey / 4);
+    reconstructed.push(decodeCellKey(cellKey));
     currentKey = cameFrom.get(currentKey);
   }
   reconstructed.reverse();
@@ -328,8 +367,12 @@ export const computeOrthogonalRoute = (params: {
   bendPenalty: number;
 }): GridPoint[] | null => {
   const { nodes, start, startExit, end, allowPoints, searchMargin, bendPenalty } = params;
-  const allowKeys = new Set(allowPoints.map(pointKey));
-  const blocked = buildBlockedCells(nodes, allowKeys);
+  const globalBounds = buildSearchBounds(nodes, start, end, searchMargin, true);
+  const gridHeight = globalBounds.maxY - globalBounds.minY + 1;
+  const encodeKey = (x: number, y: number): number => encodeCellKey(globalBounds.minX, globalBounds.minY, gridHeight, x, y);
+  const decode = (cellKey: number): GridPoint => decodeCellKey(cellKey, globalBounds.minX, globalBounds.minY, gridHeight);
+  const allowKeys = new Set<number>(allowPoints.map((point) => encodeKey(point.x, point.y)));
+  const blocked = buildBlockedCells(nodes, allowKeys, encodeKey, globalBounds);
 
   const localBounds = buildSearchBounds(nodes, start, end, searchMargin, false);
   const localRoute = runAStarWithBounds({
@@ -339,13 +382,16 @@ export const computeOrthogonalRoute = (params: {
     blocked,
     allowKeys,
     bounds: localBounds,
+    blockedBounds: globalBounds,
     bendPenalty,
+    buildCellKey: encodeKey,
+    decodeCellKey: decode,
+    gridHeight,
   });
   if (localRoute) {
     return localRoute;
   }
 
-  const globalBounds = buildSearchBounds(nodes, start, end, searchMargin, true);
   return runAStarWithBounds({
     start,
     startExit,
@@ -353,7 +399,11 @@ export const computeOrthogonalRoute = (params: {
     blocked,
     allowKeys,
     bounds: globalBounds,
+    blockedBounds: globalBounds,
     bendPenalty,
+    buildCellKey: encodeKey,
+    decodeCellKey: decode,
+    gridHeight,
   });
 };
 
