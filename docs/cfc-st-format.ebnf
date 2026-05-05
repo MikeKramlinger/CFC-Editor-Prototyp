@@ -1,0 +1,119 @@
+/*
+ST-nahe textuelle Repräsentation des CFC-Editors — EBNF (Version 1.0)
+Datei: docs/cfc-st-format.ebnf
+
+Hinweis: Der Deklarationsteil wird unverändert als ST-Block übernommen. Die Grammatik fokussiert auf den CFC-Teil (Knoten, Meta, Verbindungen).
+*/
+
+CFCProgram    = DeclarationSection , CFCSection ;
+
+DeclarationSection = "declaration" ","? , DeclarationBlock ;
+DeclarationBlock =  VERBATIM_ST_BLOCK ;    (* beliebiger ST-Code; endet mit dem Token 'cfc:' (end_declaration optional) *)
+
+(* Hinweis: In der Serialisierung folgt direkt nach der Zeile 'declaration:' eine leere Zeile. Der Parser akzeptiert diese Leerzeile vor dem eigentlichen ST-Block. *)
+(* Verbindungssyntax: Nur diese Knotentypen duerfen ohne explizite Pin-Angabe geschrieben werden: Input, Output, Jump, Return, Connection Mark - Source, Connection Mark - Sink. Beispiele: 'Input1 => Box1_0' oder 'Box1_0 -> Output1'. *)
+
+CFCSection    = { (NodeDeclaration | Connection | BlankLine | CommentLine) } ;
+
+(* --------------------------- *)
+(* Node Declarations         *)
+(* --------------------------- *)
+NodeDeclaration = Identifier , ":" , NodeType , [ MetaBlock ] , LineBreak ;
+
+NodeType = "INPUT" "(" Identifier ")"
+         | "OUTPUT" "(" Identifier ")"
+         | "BOX" "(" Identifier ")"
+         | "BOX_EN" "(" Identifier ")"
+         | "LABEL" "(" Identifier ")"
+         | "JUMP" "(" Identifier ")"
+         | "RETURN"
+         | "COMPOSER"
+         | "SELECTOR"
+         | "COMMENT" "(" StringLiteral ")"
+         ;
+
+MetaBlock = "{" , MetaAssignments , "}" ;
+MetaAssignments = MetaAssignment , { "," , MetaAssignment } ;
+MetaAssignment = "@" Identifier , "=" , MetaValue ;
+MetaValue = Identifier | Integer | Float ;    (* IDs wie n01, Reihenfolge als Integer, Koordinaten als Integer *)
+
+(* --------------------------- *)
+(* Connections                *)
+(* --------------------------- *)
+Connection = (Source , Arrow , Target , LineBreak)
+           | (ConstantInjection , LineBreak) ;
+
+Source = NodePort
+       | Identifier                (* variable name as source *)
+       | LiteralConstant           (* TRUE, FALSE, numeric or typed literal *)
+       ;
+
+NodePort = Identifier , "." , PortName ;
+Target = NodePort | Identifier ;    (* Single-Port-Knoten duerfen ohne Pin geschrieben werden. *)
+PortName = Identifier ;
+
+Arrow = "->" ;
+ConstantInjection = LiteralConstant , "=>" , Target ;
+LiteralConstant = "TRUE" | "FALSE" | Number | TimeLiteral | StringLiteral ;
+
+(* --------------------------- *)
+(* Lexical & Helpers          *)
+(* --------------------------- *)
+Identifier = Letter , { Letter | Digit | "_" } ;
+PortIndex = "[" , Integer , "]" ;    (* optional port index, falls Ports indiziert werden sollen *)
+Integer = Digit , { Digit } ;
+Float = Digit , { Digit } , "." , Digit , { Digit } ;
+Number = Float | Integer ;
+StringLiteral = '"' , { Character } , '"' ;
+TimeLiteral = "T#" , { Letter | Digit | ":" | "s" | "ms" | "m" | "h" | "d" } ;
+
+LineBreak = "\n" | "\r\n" ;
+BlankLine = LineBreak ;
+
+(* Verbatim block token: Implementationshinweis: Parser nimmt einfach alle Zeilen bis zur ersten CFC-Knoten/connection-Zeile *)
+VERBATIM_ST_BLOCK = "<ST_VERBATIM>" ;    (* Implementationen: lies alle Zeilen bis zur nächsten Zeile, die mit 'cfc:' beginnt. Ein optionales 'end_declaration' darf vorhanden sein und wird toleriert. *)
+
+CommentLine = ("//" , { Character } , LineBreak)
+            | ("/*" , { Character } , "*/" , LineBreak ) ;
+
+Letter = ? A..Z a..z ? ;
+Digit  = ? 0..9 ? ;
+Character = ? any unicode character except control and quote ? ;
+
+(* --------------------------- *)
+(* Beispiele (concrete syntax) *)
+(* --------------------------- *)
+(*
+SensorIn : INPUT(bSensor)
+{
+    @id = n10,
+    @o  = 0,
+    @x  = 2,
+    @y  = 5
+}
+
+AndHiValid : BOX_EN(AND)
+{
+    @id = n01,
+    @o  = 1,
+    @x  = 10,
+    @y  = 4
+}
+
+Enable      -> AndHiValid.IN1
+HighEnabled -> AndHiValid.IN2
+AndHiValid.OUT -> alHi.Valid
+
+TRUE  => alHi.IsHighAlarm
+FALSE => alLo.IsHighAlarm
+
+*)
+
+/*
+Implementationshinweise:
+- Der Parser sollte den DeclarationSection als rohen ST-Block lesen (bis zur ersten erkennbaren CFC-Node- oder Connection-Zeile).
+- MetaBlock ist optional, aber Round-Trip erfordert @id, @o, @x, @y — Validator prüfen.
+- Ports können optional indiziert sein, falls ein Node mehrere gleichnamige Ports hat (PortIndex-Syntax).
+- Literal-Formate (TimeLiteral, Number, String) sollten mit dem ST-Lexer kompatibel sein.
+- Fehlende Grammatikregeln (z.B. Escaping in Identifiers) müssen projektspezifisch präzisiert werden.
+*/

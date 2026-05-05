@@ -1,10 +1,11 @@
 import type { CfcFormatAdapter } from "./types.js";
 import { cfcDslFormat } from "./cfcDsl.js";
+import { cfcStFormat } from "./cfcSt.js";
 import { jsonFormat } from "./json.js";
 import { plcopenXmlFormat } from "./plcopenXml.js";
 import { xmlFormat } from "./xml.js";
 
-const adapters: CfcFormatAdapter[] = [plcopenXmlFormat, xmlFormat, jsonFormat, cfcDslFormat];
+const adapters: CfcFormatAdapter[] = [plcopenXmlFormat, xmlFormat, jsonFormat, cfcDslFormat, cfcStFormat];
 
 export const listAdapters = (): CfcFormatAdapter[] => [...adapters];
 

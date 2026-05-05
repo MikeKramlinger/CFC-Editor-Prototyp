@@ -44,6 +44,36 @@ export const normalizePort = (value: unknown, kind: "input" | "output"): string 
   return `${kind}:${Number.parseInt(match[1] ?? "0", 10)}`;
 };
 
+const SHORT_PORT_NODE_TYPES = new Set<CfcNodeType>([
+  "input",
+  "output",
+  "jump",
+  "return",
+  "connection-mark-source",
+  "connection-mark-sink",
+]);
+
+const getPortCountForKind = (type: CfcNodeType, kind: "input" | "output"): number => {
+  const template = getNodeTemplateByType(type);
+  return kind === "input" ? template.inputCount : template.outputCount;
+};
+
+export const canOmitPortReference = (type: CfcNodeType, kind: "input" | "output"): boolean => {
+  if (!SHORT_PORT_NODE_TYPES.has(type)) {
+    return false;
+  }
+
+  return getPortCountForKind(type, kind) === 1;
+};
+
+export const serializePort = (value: unknown, kind: "input" | "output", type?: CfcNodeType): string => {
+  const normalized = normalizePort(value, kind);
+  if (type && canOmitPortReference(type, kind) && normalized === `${kind}:0`) {
+    return kind;
+  }
+  return normalized;
+};
+
 export interface ParsedNodeEntry {
   node: CfcNode;
   executionOrder: number;
@@ -201,6 +231,8 @@ export const buildValidConnectionsFromRaw = (connectionsRaw: unknown[], nodeIds:
 export const toExecutionOrderedSerializableGraph = (
   graph: CfcGraph,
 ): { version: string; nodes: Array<Record<string, unknown>>; connections: CfcConnection[] } => {
+  const nodeTypeById = new Map(graph.nodes.map((node) => [node.id, node.type]));
+
   return {
     version: graph.version,
     nodes: graph.nodes.map((node) => {
@@ -222,7 +254,11 @@ export const toExecutionOrderedSerializableGraph = (
       }
       return entry;
     }),
-    connections: graph.connections,
+    connections: graph.connections.map((connection) => ({
+      ...connection,
+      fromPort: serializePort(connection.fromPort, "output", nodeTypeById.get(connection.fromNodeId)),
+      toPort: serializePort(connection.toPort, "input", nodeTypeById.get(connection.toNodeId)),
+    })),
   };
 };
 
