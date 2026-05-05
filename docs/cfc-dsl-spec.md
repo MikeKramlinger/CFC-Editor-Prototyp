@@ -130,6 +130,10 @@ Parser-Regeln fuer Pins:
   - Input: `EN`, `IN1`, `IN2`, ...
   - Output: `ENO`, `OUT`, `OUT2`, ...
 
+Hinweis:
+- Nur diese Knotentypen dürfen ohne explizite Portangabe geschrieben werden: `Input`, `Output`, `Jump`, `Return`, `Connection Mark - Source`, `Connection Mark - Sink`.
+- Bei Mehrport-Typen wie `Box`, `Box with EN/ENO`, `Composer` und `Selector` bleibt der Port Pflicht.
+
 ## 6. Vollstaendiges Beispiel
 
 ```text

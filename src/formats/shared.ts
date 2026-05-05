@@ -74,6 +74,70 @@ export const serializePort = (value: unknown, kind: "input" | "output", type?: C
   return normalized;
 };
 
+// Label field helpers: centralize mapping between internal `label` and
+// exported/imported attribute names per node type.
+export const getExportLabelFieldName = (type: CfcNodeType): string => {
+  switch (type) {
+    case "input":
+    case "output":
+      return "expression";
+    case "box":
+    case "box-en-eno":
+      return "instanceName";
+    case "jump":
+    case "label":
+      return "label";
+    case "comment":
+      return "content";
+    case "composer":
+    case "selector":
+      return "text";
+    case "connection-mark-source":
+    case "connection-mark-sink":
+      return "signal";
+    default:
+      return "label";
+  }
+};
+
+export const getImportLabelValue = (record: Record<string, unknown>, type: CfcNodeType): string => {
+  const fld = getExportLabelFieldName(type);
+  const isBoxNode = type === "box" || type === "box-en-eno";
+
+  if (fld === "instanceName") {
+    // instanceName prefers sanitized declaration name
+    return sanitizeDeclarationName(toStringValue(record.instanceName ?? record.label ?? record.declarationName, "Block")) || "Block";
+  }
+
+  if (fld === "expression") {
+    return toStringValue(record.expression ?? record.label, "Block");
+  }
+
+  if (fld === "content") {
+    return toStringValue(record.content ?? record.label, "Block");
+  }
+
+  if (fld === "text") {
+    return toStringValue(record.text ?? record.label, "Block");
+  }
+
+  if (fld === "signal") {
+    return toStringValue(record.signal ?? record.label, "Block");
+  }
+
+  // Fallback: label or other candidate fields
+  return toStringValue(record.label ?? record.instanceName ?? record.expression ?? record.content ?? record.text ?? record.signal, "Block");
+};
+
+// Return a single-property object mapping the export field name to the node's label value.
+export const getExportLabelEntry = (node: CfcNode): Record<string, string> => {
+  if (node.type === "return") {
+    return {};
+  }
+  const field = getExportLabelFieldName(node.type);
+  return { [field]: node.label };
+};
+
 export interface ParsedNodeEntry {
   node: CfcNode;
   executionOrder: number;
@@ -98,10 +162,12 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
   const isBoxNode = type === "box" || type === "box-en-eno";
   const hasExplicitExecutionOrder = Object.prototype.hasOwnProperty.call(entry, "executionOrder");
   const executionOrder = Math.max(1, Math.floor(toFiniteNumber(entry.executionOrder, index + 1)));
+
+  const asRecord = entry as Record<string, unknown>;
   const node: CfcNode = {
     id: toStringValue(entry.id, `N${index + 1}`),
     type,
-    label: isBoxNode ? sanitizeDeclarationName(toStringValue(entry.label, "Block")) || "Block" : toStringValue(entry.label, "Block"),
+    label: getImportLabelValue(asRecord, type),
     x: toFiniteNumber(entry.x),
     y: toFiniteNumber(entry.y),
     width: template.width,
@@ -236,23 +302,18 @@ export const toExecutionOrderedSerializableGraph = (
   return {
     version: graph.version,
     nodes: graph.nodes.map((node) => {
-      const entry: Record<string, unknown> = {
+      const isExecOrdered = isExecutionOrderedNode(node);
+      const executionOrder = isExecOrdered ? getExecutionOrderByNodeId(graph.nodes, node.id) : null;
+
+      return {
         id: node.id,
         type: node.type,
-        label: node.label,
+        ...(isExecOrdered && executionOrder !== null ? { executionOrder: executionOrder } : {}),
+        ...(node.typeName ? { typeName: node.typeName } : {}),
+        ...getExportLabelEntry(node),
         x: node.x,
         y: node.y,
       };
-      if (isExecutionOrderedNode(node)) {
-        const executionOrder = getExecutionOrderByNodeId(graph.nodes, node.id);
-        if (executionOrder !== null) {
-          entry.executionOrder = executionOrder;
-        }
-      }
-      if (node.typeName) {
-        entry.typeName = node.typeName;
-      }
-      return entry;
     }),
     connections: graph.connections.map((connection) => ({
       ...connection,

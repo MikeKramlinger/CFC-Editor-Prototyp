@@ -9,6 +9,8 @@ import type { CfcFormatAdapter } from "./types.js";
 import {
   buildOrderedNodesFromRaw,
   buildValidConnectionsFromRaw,
+  canOmitPortReference,
+  serializePort,
   toExecutionOrderedSerializableGraph,
 } from "./shared.js";
 
@@ -247,6 +249,12 @@ const parseEndpoint = (
   const pinRaw = (match[2] ?? "").trim();
   const nodeType = nodeTypeById.get(nodeId);
   const pin = pinRaw.startsWith("!") ? pinRaw.slice(1) : pinRaw;
+  if (!nodeType && pin.length === 0) {
+    throw new Error(`Ungueltiger Endpunkt in Zeile ${lineNumber}: "${raw}"`);
+  }
+  if (nodeType && pin.length === 0 && !canOmitPortReference(nodeType, kind)) {
+    throw new Error(`Ungueltiger Endpunkt in Zeile ${lineNumber}: "${raw}"`);
+  }
   const index = parsePinIndex(pin, kind, nodeType);
 
   return {
@@ -395,6 +403,11 @@ const toConnectionEndpointSyntax = (
   nodeTypeById: Map<string, CfcNodeType>,
 ): string => {
   const nodeType = nodeTypeById.get(nodeId) ?? "box";
+  const serializedPort = serializePort(port, kind, nodeType);
+  if (serializedPort === kind) {
+    return nodeId;
+  }
+
   const index = readPortIndex(port, kind);
   const pin = toPinName(index, kind, nodeType);
   return `${nodeId}.${pin}`;

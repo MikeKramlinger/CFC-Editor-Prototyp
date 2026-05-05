@@ -152,9 +152,12 @@ export const createNodeElement = (model: NodeRenderModel, callbacks: NodeRenderC
   }
 
   // Middle title/label inside the box: for Box nodes show typeName, otherwise show node.label
+  // For `return` nodes the visible title must always be the fixed text "RETURN".
   const titleEl = document.createElement("div");
   titleEl.className = "cfc-node__title";
-  if (node.type === "box" || node.type === "box-en-eno") {
+  if (node.type === "return") {
+    titleEl.textContent = "RETURN";
+  } else if (node.type === "box" || node.type === "box-en-eno") {
     // Prefer the declared variable name inside the box if available, otherwise show the typeName
     titleEl.textContent = node.typeName ?? node.label;
   } else {

@@ -2,10 +2,11 @@ import {
   DEFAULT_NODE_TYPE,
   createEmptyGraph,
   type CfcGraph,
+  type CfcNodeType,
 } from "../model.js";
 import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
 import type { CfcFormatAdapter } from "./types.js";
-import { buildOrderedNodesFromRaw, buildValidConnectionsFromRaw, deriveDeclarationsFromNodes } from "./shared.js";
+import { buildOrderedNodesFromRaw, buildValidConnectionsFromRaw, deriveDeclarationsFromNodes, serializePort, getImportLabelValue, getExportLabelEntry } from "./shared.js";
 
 const NAMESPACE = "http://www.plcopen.org/xml/tc6_0200";
 
@@ -58,44 +59,46 @@ export const xmlFormat: CfcFormatAdapter = {
   label: "XML",
   fileExtension: "xml",
   serialize(graph: CfcGraph): string {
-    const documentRoot = document.implementation.createDocument(NAMESPACE, "project", null);
+    const documentRoot = document.implementation.createDocument(null, "cfcEditor", null);
     const root = documentRoot.documentElement;
+    root.setAttribute("version", graph.version);
+    const nodeTypeById = new Map(graph.nodes.map((node) => [node.id, node.type]));
 
-    const cfc = documentRoot.createElementNS(NAMESPACE, "cfcEditor");
-    cfc.setAttribute("version", graph.version);
-
-    const nodes = documentRoot.createElementNS(NAMESPACE, "nodes");
+    const nodes = documentRoot.createElement("nodes");
     let executionOrder = 1;
     graph.nodes.forEach((node) => {
-      const nodeElement = documentRoot.createElementNS(NAMESPACE, "node");
+      const nodeElement = documentRoot.createElement("node");
       nodeElement.setAttribute("id", node.id);
       nodeElement.setAttribute("type", node.type);
-      nodeElement.setAttribute("label", node.label);
+      // Use helper to produce the export label entry and write it as attribute
+      const labelEntry = getExportLabelEntry(node as any);
+      for (const [k, v] of Object.entries(labelEntry)) {
+        nodeElement.setAttribute(k, v);
+      }
       if (isExecutionOrderedNode(node)) {
         nodeElement.setAttribute("executionOrder", String(executionOrder));
         executionOrder += 1;
       }
-      nodeElement.setAttribute("x", String(node.x));
-      nodeElement.setAttribute("y", String(node.y));
       if (node.typeName) {
         nodeElement.setAttribute("typeName", node.typeName);
       }
+      nodeElement.setAttribute("x", String(node.x));
+      nodeElement.setAttribute("y", String(node.y));
       nodes.append(nodeElement);
     });
 
-    const connections = documentRoot.createElementNS(NAMESPACE, "connections");
+    const connections = documentRoot.createElement("connections");
     graph.connections.forEach((connection) => {
-      const connectionElement = documentRoot.createElementNS(NAMESPACE, "connection");
+      const connectionElement = documentRoot.createElement("connection");
       connectionElement.setAttribute("id", connection.id);
       connectionElement.setAttribute("from", connection.fromNodeId);
-      connectionElement.setAttribute("fromPort", connection.fromPort);
+      connectionElement.setAttribute("fromPort", serializePort(connection.fromPort, "output", nodeTypeById.get(connection.fromNodeId)));
       connectionElement.setAttribute("to", connection.toNodeId);
-      connectionElement.setAttribute("toPort", connection.toPort);
+      connectionElement.setAttribute("toPort", serializePort(connection.toPort, "input", nodeTypeById.get(connection.toNodeId)));
       connections.append(connectionElement);
     });
 
-    cfc.append(nodes, connections);
-    root.append(cfc);
+    root.append(nodes, connections);
 
     const serialized = new XMLSerializer().serializeToString(documentRoot).replace(/^<\?xml[^>]*>\s*/i, "");
     return `<?xml version="1.0" encoding="UTF-8"?>\n${formatXml(serialized)}`;
@@ -116,10 +119,21 @@ export const xmlFormat: CfcFormatAdapter = {
 
     const nodeElements = cfc.getElementsByTagNameNS("*", "node");
     const nodesRaw = Array.from(nodeElements).map((nodeElement, sourceIndex) => {
+      const nodeType = (nodeElement.getAttribute("type") ?? DEFAULT_NODE_TYPE) as CfcNodeType;
+      const record: Record<string, unknown> = {
+        label: nodeElement.getAttribute("label") ?? undefined,
+        expression: nodeElement.getAttribute("expression") ?? undefined,
+        instanceName: nodeElement.getAttribute("instanceName") ?? undefined,
+        declarationName: nodeElement.getAttribute("declarationName") ?? undefined,
+        content: nodeElement.getAttribute("content") ?? undefined,
+        text: nodeElement.getAttribute("text") ?? undefined,
+        signal: nodeElement.getAttribute("signal") ?? undefined,
+      };
+
       const nodeRaw: Record<string, unknown> = {
         id: requireAttr(nodeElement, "id"),
-        type: nodeElement.getAttribute("type") ?? DEFAULT_NODE_TYPE,
-        label: nodeElement.getAttribute("label") ?? "Block",
+        type: nodeType,
+        label: getImportLabelValue(record, nodeType),
         x: parseNumberAttr(nodeElement, "x"),
         y: parseNumberAttr(nodeElement, "y"),
       };

@@ -31,7 +31,7 @@ describe("format payload fields integration", () => {
 
     expect(parsed.version).toBe("1.2");
     expect(parsed.nodes).toHaveLength(4);
-    expect(parsed.nodes[0]).toMatchObject({ id: "N1", type: "input", label: "In", x: 1, y: 2 });
+    expect(parsed.nodes[0]).toMatchObject({ id: "N1", type: "input", expression: "In", x: 1, y: 2 });
     expect(parsed.nodes[0]).not.toHaveProperty("width");
     expect(parsed.nodes[0]).not.toHaveProperty("height");
 
@@ -39,7 +39,7 @@ describe("format payload fields integration", () => {
     expect(parsed.connections[0]).toMatchObject({
       id: "C1",
       fromNodeId: "N1",
-      fromPort: "output:0",
+      fromPort: "output",
       toNodeId: "N2",
       toPort: "input:0",
     });
@@ -52,20 +52,20 @@ describe("format payload fields integration", () => {
     expect(raw).toContain("N1[/ In /] {o: 0, x: 1, y: 2}");
     expect(raw).toContain("N2[Box] {o: 1, x: 7, y: 3}");
     expect(raw).toContain("N4[* Doc *] {o: 0, x: 5, y: 9}");
-    expect(raw).toContain("N1.OUT --> N2.IN1");
-    expect(raw).toContain("N2.OUT --> N3.IN1");
+    expect(raw).toContain("N1 --> N2.IN1");
+    expect(raw).toContain("N2.OUT --> N3");
   });
 
   it("writes expected attributes in XML", () => {
     const raw = getAdapterById("xml").serialize(graph);
 
     expect(raw).toContain('<cfcEditor version="1.2">');
-    expect(raw).toContain('<node id="N1" type="input" label="In" x="1" y="2"/>');
-    expect(raw).toContain('<node id="N2" type="box" label="Box" executionOrder="1" x="7" y="3"/>');
-    expect(raw).toContain('<node id="N3" type="output" label="Out" executionOrder="2" x="14" y="4"/>');
+    expect(raw).toContain('<node id="N1" type="input" expression="In" x="1" y="2"/>');
+    expect(raw).toContain('<node id="N2" type="box" instanceName="Box" executionOrder="1" x="7" y="3"/>');
+    expect(raw).toContain('<node id="N3" type="output" expression="Out" executionOrder="2" x="14" y="4"/>');
 
-    expect(raw).toContain('<connection id="C1" from="N1" fromPort="output:0" to="N2" toPort="input:0"/>');
-    expect(raw).toContain('<connection id="C2" from="N2" fromPort="output:0" to="N3" toPort="input:0"/>');
+    expect(raw).toContain('<connection id="C1" from="N1" fromPort="output" to="N2" toPort="input:0"/>');
+    expect(raw).toContain('<connection id="C2" from="N2" fromPort="output:0" to="N3" toPort="input"/>');
   });
 
   it("writes expected structures in PLCopenXML", () => {

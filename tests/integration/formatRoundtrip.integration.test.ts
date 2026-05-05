@@ -182,8 +182,8 @@ DocOld[/* Legacy Kommentar */] {o: 0, x: 1, y: 9}
 MOut>ToPhase2] {o: 0, x: 12, y: 1}
 MIn[ToPhase2< {o: 0, x: 1, y: 11}
 
-In1.OUT --> MOut
-MIn --> J1.IN1
+In1 --> MOut
+MIn --> J1
 `;
 
     const graph = cfcDslFormat.deserialize(raw);

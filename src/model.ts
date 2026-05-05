@@ -60,12 +60,12 @@ export type NormalizedNodeName = string;
 export interface CfcNode {
   id: string;
   type: CfcNodeType;
+  typeName?: NormalizedNodeName;
   label: NormalizedNodeName;
   x: number;
   y: number;
   width: number;
   height: number;
-  typeName?: NormalizedNodeName;
 }
 
 export interface CfcConnection {

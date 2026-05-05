@@ -118,7 +118,7 @@ describe("instanceName and typeName serialization", () => {
       
       // Verify attributes are in XML
       expect(serialized).toContain('typeName="FB_Motor"');
-      expect(serialized).toContain('label="TestBox"');
+      expect(serialized).toContain('instanceName="TestBox"');
     });
   });
 
