@@ -10,12 +10,16 @@ cfcProgram          : declarationSection cfcSection EOF ;
 // Hinweis: 'end_declaration' ist weiterhin erlaubt, wird aber nicht mehr zwingend erwartet.
 // Konvention: Die Serialisierung fügt unmittelbar nach 'declaration:' eine Leerzeile ein; der Parser toleriert diese Leerzeile.
 // Konvention: Nur Input, Output, Jump, Return, Connection Mark - Source und Connection Mark - Sink dürfen ohne Pin geschrieben werden, z. B. 'Input1 => Box1_0'.
+// Hinweis: Struktur-Elemente (z. B. RETURN, JUMP, LABEL) und IO-Deklarationen
+// (INPUT/OUTPUT) können anonym ohne vorangestellten Bezeichner geschrieben
+// werden. Die ältere Form `Name: TYPE(...)` bleibt zur Abwärtskompatibilität
+// weiterhin erlaubt.
 declarationSection  : 'declaration:' VERBATIM_ST_BLOCK ;
 
 cfcSection          : 'cfc:' ( nodeDeclaration | connection | commentLine )* ;
 
 // Knoten nutzen NUR den einfachen Identifier (keine Punkte erlaubt!)
-nodeDeclaration     : IDENT_SIMPLE ':' nodeType metaBlock? ;
+nodeDeclaration     : ( IDENT_SIMPLE ':' )? nodeType metaBlock? ;
 
 nodeType            : 'INPUT' '(' IDENT_QUALIFIED ')'  // Variablen dürfen Punkte haben
                     | 'OUTPUT' '(' IDENT_QUALIFIED ')'

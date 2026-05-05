@@ -43,13 +43,13 @@ END_VAR
 
 cfc:
 
-In : INPUT() {
+INPUT(In) {
   @id = INP,
   @x = 0,
   @y = 0
 }
 
-Out : OUTPUT() {
+OUTPUT(Out) {
   @id = OUT,
   @x = 20,
   @y = 0

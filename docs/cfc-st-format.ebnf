@@ -18,7 +18,11 @@ CFCSection    = { (NodeDeclaration | Connection | BlankLine | CommentLine) } ;
 (* --------------------------- *)
 (* Node Declarations         *)
 (* --------------------------- *)
-NodeDeclaration = Identifier , ":" , NodeType , [ MetaBlock ] , LineBreak ;
+(* NodeDeclaration: Identifier is optional. Structural elements (RETURN, JUMP, LABEL)
+    and IO declarations (INPUT, OUTPUT) may be written without a leading
+    developer-assigned variable name. For backward compatibility the optional
+    prefixed form `Name: TYPE(...)` is still accepted. *)
+NodeDeclaration = [ Identifier , ":" ] , NodeType , [ MetaBlock ] , LineBreak ;
 
 NodeType = "INPUT" "(" Identifier ")"
          | "OUTPUT" "(" Identifier ")"
@@ -30,7 +34,7 @@ NodeType = "INPUT" "(" Identifier ")"
          | "COMPOSER"
          | "SELECTOR"
          | "COMMENT" "(" StringLiteral ")"
-         ;
+         | Identifier ;    (* function/name without instance, e.g. AND { ... } *)
 
 MetaBlock = "{" , MetaAssignments , "}" ;
 MetaAssignments = MetaAssignment , { "," , MetaAssignment } ;
@@ -84,25 +88,19 @@ Character = ? any unicode character except control and quote ? ;
 (* Beispiele (concrete syntax) *)
 (* --------------------------- *)
 (*
-SensorIn : INPUT(bSensor)
-{
-    @id = n10,
-    @o  = 0,
-    @x  = 2,
-    @y  = 5
-}
+RETURN {@id = n05, @o = 5, @x = 40, @y = 10}
 
-AndHiValid : BOX_EN(AND)
-{
-    @id = n01,
-    @o  = 1,
-    @x  = 10,
-    @y  = 4
-}
+LABEL(FehlerSchleife) {@id = n06, @o = 6, @x = 5, @y = 20}
 
-Enable      -> AndHiValid.IN1
-HighEnabled -> AndHiValid.IN2
-AndHiValid.OUT -> alHi.Valid
+INPUT(bSensor) {@id = n10, @o = 0, @x = 2, @y = 5}
+
+AndHiValid : BOX_EN(AND) {@id = n01, @o  = 1, @x  = 10, @y  = 4}
+
+AND {@id = n02, @o = 2, @x = 10, @y = 12}
+
+Enable      -> AND.IN1
+HighEnabled -> AND.IN2
+AND.OUT -> alHi.Valid
 
 TRUE  => alHi.IsHighAlarm
 FALSE => alLo.IsHighAlarm

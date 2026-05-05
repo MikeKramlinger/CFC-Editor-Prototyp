@@ -133,49 +133,81 @@ class CfcSTParser {
           continue;
         }
 
-        // node declaration (Name : TYPE(...))
-        if (line.includes(":")) {
-          const [left, right] = line.split(":").map(s => s.trim());
-          const nodeName = left ?? "";
-          const typePart = right ?? "";
+        // node declaration: accept both `Name : TYPE(...)` and `TYPE(Label)` forms
+        {
+          const lineNoBrace = line.replace(/\{\s*$/, "").trim();
+          const hasColon = lineNoBrace.includes(":");
+          let leftName = "";
+          let typePart = lineNoBrace;
+          if (hasColon) {
+            const idx = lineNoBrace.indexOf(":");
+            leftName = lineNoBrace.slice(0, idx).trim();
+            typePart = lineNoBrace.slice(idx + 1).trim();
+          }
+
           const m = /^([A-Za-z0-9_]+)(?:\((.*)\))?/.exec(typePart);
-          let baseType: CfcNodeType = "box";
-          let typeName: string | undefined;
           if (m) {
             const t = m[1];
             const param = m[2];
+            let baseType: CfcNodeType = "box";
+            let parsedParam: string | undefined = undefined;
             switch (t) {
-              case "INPUT": baseType = "input"; typeName = param || undefined; break;
-              case "OUTPUT": baseType = "output"; typeName = param || undefined; break;
-              case "BOX": baseType = "box"; typeName = param || undefined; break;
-              case "BOX_EN": baseType = "box-en-eno"; typeName = param || undefined; break;
-              case "LABEL": baseType = "label"; typeName = param || undefined; break;
-              case "JUMP": baseType = "jump"; typeName = param || undefined; break;
+              case "INPUT": baseType = "input"; parsedParam = param || undefined; break;
+              case "OUTPUT": baseType = "output"; parsedParam = param || undefined; break;
+              case "BOX": baseType = "box"; parsedParam = param || undefined; break;
+              case "BOX_EN": baseType = "box-en-eno"; parsedParam = param || undefined; break;
+              case "LABEL": baseType = "label"; parsedParam = param || undefined; break;
+              case "JUMP": baseType = "jump"; parsedParam = param || undefined; break;
               case "RETURN": baseType = "return"; break;
-              case "COMPOSER": baseType = "composer"; break;
-              case "SELECTOR": baseType = "selector"; break;
-              case "CONNECTION_MARK_SOURCE": baseType = "connection-mark-source"; break;
-              case "CONNECTION_MARK_SINK": baseType = "connection-mark-sink"; break;
-              case "COMMENT": baseType = "comment"; if (param) typeName = param.replace(/^"|"$/g, ""); break;
-              default: baseType = "box"; typeName = param || undefined; break;
+              case "COMPOSER": baseType = "composer"; parsedParam = param || undefined; break;
+              case "SELECTOR": baseType = "selector"; parsedParam = param || undefined; break;
+              case "CM_SOURCE": baseType = "connection-mark-source"; parsedParam = param || undefined; break;
+              case "CM_SINK": baseType = "connection-mark-sink"; parsedParam = param || undefined; break;
+              case "COMMENT": baseType = "comment"; parsedParam = param || undefined; break;
+              default: baseType = "box"; parsedParam = param || undefined; break;
             }
+
+            const template = getNodeTemplateByType(baseType as CfcNodeType);
+
+            // Decide final label and typeName according to new convention
+            let finalLabel = "";
+            let finalTypeName: string | undefined = undefined;
+
+            if (baseType === "box") {
+              // BOX keeps the left identifier as label; parentheses are the typeName
+              finalLabel = hasColon ? leftName : "";
+              finalTypeName = parsedParam ? parsedParam.trim() : undefined;
+            } else if (baseType === "comment") {
+              // comment keeps payload in typeName (strip quotes if present)
+              finalLabel = hasColon ? leftName : "";
+              finalTypeName = parsedParam ? parsedParam.trim().replace(/^"(.*)"$/, "$1") : (hasColon ? leftName : undefined);
+            } else {
+              if (hasColon) {
+                // legacy form `Name : TYPE(param)` -> keep Name as label, preserve param
+                finalLabel = leftName;
+                finalTypeName = parsedParam ? parsedParam.trim() : undefined;
+              } else {
+                // new form `TYPE(Label)` -> label is in parentheses
+                finalLabel = parsedParam ? parsedParam.trim() : "";
+                finalTypeName = undefined;
+              }
+            }
+
+            const node: CfcNode = {
+              id: `node${nextNodeIndex++}`,
+              type: baseType as CfcNodeType,
+              label: finalLabel,
+              x: 0,
+              y: 0,
+              width: template.width,
+              height: template.height,
+              typeName: finalTypeName ? finalTypeName.trim() : undefined
+            };
+
+            pushNode(node);
+            activeNode = node;
+            continue;
           }
-
-          const template = getNodeTemplateByType(baseType as CfcNodeType);
-          const node: CfcNode = {
-            id: `node${nextNodeIndex++}`,
-            type: baseType as CfcNodeType,
-            label: nodeName.trim(),
-            x: 0,
-            y: 0,
-            width: template.width,
-            height: template.height,
-            typeName: typeName ? typeName.trim() : undefined
-          };
-
-          pushNode(node);
-          activeNode = node;
-          continue;
         }
       }
     }
@@ -236,7 +268,20 @@ class CfcSTParser {
       });
     });
 
-    graph.declarations = declLines.join("\n");
+    // Trim leading/trailing blank lines from the parsed declaration block so
+    // exported formatting newlines are not stored inside `graph.declarations`.
+    while (declLines.length > 0 && /^\s*$/.test(declLines[0] ?? "")) {
+      declLines.shift();
+    }
+    while (declLines.length > 0 && /^\s*$/.test(declLines[declLines.length - 1] ?? "")) {
+      declLines.pop();
+    }
+    if (declLines.length === 0) {
+      // No meaningful declaration content: keep model default
+      graph.declarations = createEmptyGraph().declarations;
+    } else {
+      graph.declarations = declLines.join("\n");
+    }
     return graph;
   }
 }
@@ -276,22 +321,41 @@ export const cfcStFormat: CfcFormatAdapter = {
     };
 
     graph.nodes.forEach(node => {
-      let typeStr = "BOX(";
-      switch (node.type) {
-        case "input": typeStr = `INPUT(${node.typeName || ""})`; break;
-        case "output": typeStr = `OUTPUT(${node.typeName || ""})`; break;
-        case "box": typeStr = `BOX(${node.typeName || ""})`; break;
-        case "box-en-eno": typeStr = `BOX_EN(${node.typeName || ""})`; break;
-        case "jump": typeStr = `JUMP(${node.typeName || ""})`; break;
-        case "label": typeStr = `LABEL(${node.typeName || ""})`; break;
-        case "return": typeStr = `RETURN`; break;
-        case "composer": typeStr = `COMPOSER`; break;
-        case "selector": typeStr = `SELECTOR`; break;
-        case "comment": typeStr = `COMMENT("${node.typeName || ""}")`; break;
-        default: typeStr = `BOX(${node.typeName || ""})`; break;
+      const tokenForType = (t: CfcNodeType) => {
+        switch (t) {
+          case "input": return "INPUT";
+          case "output": return "OUTPUT";
+          case "box": return "BOX";
+          case "box-en-eno": return "BOX_EN";
+          case "jump": return "JUMP";
+          case "label": return "LABEL";
+          case "return": return "RETURN";
+          case "composer": return "COMPOSER";
+          case "selector": return "SELECTOR";
+          case "connection-mark-source": return "CM_SOURCE";
+          case "connection-mark-sink": return "CM_SINK";
+          case "comment": return "COMMENT";
+          default: return "BOX";
+        }
+      };
+
+      const token = tokenForType(node.type);
+      let header = "";
+
+      if (node.type === "box") {
+        const labelPart = node.label && node.label.trim() ? `${node.label} : ` : "";
+        header = `${labelPart}${token}(${node.typeName || ""})`;
+      } else if (node.type === "comment") {
+        const payload = node.typeName ?? node.label ?? "";
+        header = `COMMENT("${payload}")`;
+      } else if (node.type === "return") {
+        header = token;
+      } else {
+        const inner = node.label && node.label.trim() ? node.label : (node.typeName || "");
+        header = `${token}(${inner})`;
       }
 
-      result += `${node.label} : ${typeStr} {\n`;
+      result += `${header} {\n`;
       result += `  @id = ${node.id},\n`;
       result += `  @x = ${node.x},\n`;
       result += `  @y = ${node.y}\n`;
@@ -316,7 +380,7 @@ export const cfcStFormat: CfcFormatAdapter = {
       }
     });
 
-    return result;
+    return result.trim() + "\n";
   },
 
   deserialize: (raw: string): CfcGraph => {
