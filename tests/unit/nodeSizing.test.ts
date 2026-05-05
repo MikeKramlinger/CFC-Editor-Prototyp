@@ -62,7 +62,9 @@ describe("node sizing", () => {
   });
 
   it("reserves extra width for return node execution-order badge", () => {
-    const label = "Very long return label that should not collide with execution order";
+    // Since return nodes fix their title to "RETURN", we use "RETURN" as label 
+    // for outputNode to make them comparable.
+    const label = "RETURN";
     const outputNode = createNode("N1", "output", 0, 0, { label });
     const returnNode = createNode("N2", "return", 0, 0, { label });
 

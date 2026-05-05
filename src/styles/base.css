@@ -774,9 +774,20 @@ input[type="number"]:hover {
   text-decoration: none;
 }
 
+.cfc-node[data-node-type="connection-mark-source"] .cfc-node__title {
+  padding-left: 12px;
+  padding-right: 4px;
+}
+
+.cfc-node[data-node-type="connection-mark-sink"] .cfc-node__title {
+  padding-left: 4px;
+  padding-right: 12px;
+}
+
 .cfc-node__title {
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 /* Instance name shown above box for derived-type nodes */

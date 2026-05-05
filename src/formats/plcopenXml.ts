@@ -10,8 +10,11 @@ import { getExecutionOrderByNodeId, isExecutionOrderedNode } from "../core/graph
 import { generateDeclarations, isElementaryType, parseDeclarations, type Variable } from "../declarations/index.js";
 import type { CfcFormatAdapter } from "./types.js";
 import { deriveDeclarationsFromNodes } from "./shared.js";
+import { fitNodeWidthToLabel } from "../core/editor/nodeSizing.js";
 
 const NAMESPACE = "http://www.plcopen.org/xml/tc6_0200";
+const OBJECT_ID_DATA_NAME = "http://www.3s-software.com/plcopenxml/objectid";
+const PROJECT_STRUCTURE_DATA_NAME = "http://www.3s-software.com/plcopenxml/projectstructure";
 
 type ConnectionMode = "operator" | "functionblock";
 
@@ -556,6 +559,29 @@ const makeObjectId = (): string => {
   return "00000000-0000-4000-8000-000000000000";
 };
 
+const readPlcopenObjectId = (xml: Document): string | undefined => {
+  const dataElements = Array.from(xml.getElementsByTagNameNS("*", "data"));
+  const objectIdData = dataElements.find((data) => data.getAttribute("name") === OBJECT_ID_DATA_NAME);
+  const objectIdValue = objectIdData
+    ? Array.from(objectIdData.children)
+      .find((child) => child.localName === "ObjectId")
+      ?.textContent
+      ?.trim()
+    : undefined;
+  if (objectIdValue) {
+    return objectIdValue;
+  }
+
+  const projectStructureData = dataElements.find((data) => data.getAttribute("name") === PROJECT_STRUCTURE_DATA_NAME);
+  const projectStructureObject = projectStructureData
+    ? Array.from(projectStructureData.getElementsByTagNameNS("*", "Object")).find((object) =>
+      (object.getAttribute("ObjectId") ?? "").trim().length > 0,
+    )
+    : undefined;
+  const fallbackObjectId = projectStructureObject?.getAttribute("ObjectId")?.trim();
+  return fallbackObjectId || undefined;
+};
+
 export const plcopenXmlFormat: CfcFormatAdapter = {
   id: "plcopen-xml",
   label: "PLCopenXML",
@@ -565,15 +591,18 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     const root = doc.documentElement;
 
     const now = new Date().toISOString();
+    const creationDateTime = graph.plcopenXmlMetadata?.creationDateTime ?? now;
+    const modificationDateTime = graph.plcopenXmlMetadata?.modificationDateTime ?? now;
+    const idValue = graph.plcopenXmlMetadata?.objectId ?? makeObjectId();
     const fileHeader = doc.createElementNS(NAMESPACE, "fileHeader");
     fileHeader.setAttribute("companyName", "");
     fileHeader.setAttribute("productName", "CODESYS CFC-Editor Prototype");
     fileHeader.setAttribute("productVersion", "CODESYS CFC-Editor Prototype v1");
-    fileHeader.setAttribute("creationDateTime", now);
+    fileHeader.setAttribute("creationDateTime", creationDateTime);
 
     const contentHeader = doc.createElementNS(NAMESPACE, "contentHeader");
     contentHeader.setAttribute("name", "Export.project");
-    contentHeader.setAttribute("modificationDateTime", now);
+    contentHeader.setAttribute("modificationDateTime", modificationDateTime);
 
     const coordinateInfo = doc.createElementNS(NAMESPACE, "coordinateInfo");
     ["fbd", "ld", "sfc"].forEach((name) => {
@@ -984,10 +1013,9 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
 
     const pouAddData = doc.createElementNS(NAMESPACE, "addData");
     const objectIdData = doc.createElementNS(NAMESPACE, "data");
-    objectIdData.setAttribute("name", "http://www.3s-software.com/plcopenxml/objectid");
+    objectIdData.setAttribute("name", OBJECT_ID_DATA_NAME);
     objectIdData.setAttribute("handleUnknown", "discard");
     const objectId = doc.createElementNS(NAMESPACE, "ObjectId");
-    const idValue = makeObjectId();
     objectId.textContent = idValue;
     objectIdData.append(objectId);
     pouAddData.append(objectIdData);
@@ -1001,7 +1029,7 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
 
     const projectAddData = doc.createElementNS(NAMESPACE, "addData");
     const projectStructureData = doc.createElementNS(NAMESPACE, "data");
-    projectStructureData.setAttribute("name", "http://www.3s-software.com/plcopenxml/projectstructure");
+    projectStructureData.setAttribute("name", PROJECT_STRUCTURE_DATA_NAME);
     projectStructureData.setAttribute("handleUnknown", "discard");
     const projectStructure = doc.createElementNS(NAMESPACE, "ProjectStructure");
     const object = doc.createElementNS(NAMESPACE, "Object");
@@ -1047,6 +1075,7 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
         return left.sourceIndex - right.sourceIndex;
       })
       .forEach((entry) => {
+        fitNodeWidthToLabel(entry.node);
         graph.nodes.push(entry.node);
       });
 
@@ -1087,6 +1116,17 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     });
 
     graph.declarations = parseInterfaceDeclarations(xml) ?? deriveDeclarationsFromNodes(graph.nodes);
+
+    const creationDateTime = xml.getElementsByTagNameNS("*", "fileHeader").item(0)?.getAttribute("creationDateTime")?.trim() || undefined;
+    const modificationDateTime = xml.getElementsByTagNameNS("*", "contentHeader").item(0)?.getAttribute("modificationDateTime")?.trim() || undefined;
+    const objectId = readPlcopenObjectId(xml);
+    if (creationDateTime || modificationDateTime || objectId) {
+      graph.plcopenXmlMetadata = {
+        creationDateTime,
+        modificationDateTime,
+        objectId,
+      };
+    }
 
     return graph;
   },

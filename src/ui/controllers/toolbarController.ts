@@ -1,5 +1,5 @@
 import type { CfcFormatAdapter } from "../../formats/types.js";
-import { getNodeTemplateByType, type CfcGraph, type CfcNodeType } from "../../model.js";
+import { type CfcGraph, type CfcNodeType, createEmptyGraph } from "../../model.js";
 import { createBulkController } from "./bulkController.js";
 
 type UiTheme = "light" | "dark";
@@ -123,7 +123,13 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
     try {
       const adapter = options.getCurrentAdapter();
       const rawDataText = options.getDataText();
+      const previousGraph = options.getCurrentGraph();
+      const previousDeclarations = previousGraph?.declarations ?? "";
       const graph = adapter.deserialize(rawDataText);
+      const modelDefaultDecl = createEmptyGraph().declarations;
+      if (!graph.declarations || graph.declarations.trim().length === 0 || graph.declarations === modelDefaultDecl) {
+        graph.declarations = previousDeclarations;
+      }
       options.loadGraph(graph);
       const normalizedGraph = options.getCurrentGraph();
       options.setCurrentGraph(normalizedGraph);

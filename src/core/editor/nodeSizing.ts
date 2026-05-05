@@ -49,13 +49,27 @@ const getExecutionOrderReservePx = (node: CfcNode): number => {
 
 const computeFittedNodeWidth = (node: CfcNode): number => {
   const template = getNodeTemplateByType(node.type);
-  const titleWidthPx = measureTextWidthPx(node.label, '600 14px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif');
+
+  let mainText = node.label ?? "";
+  if (node.type === "return") {
+    mainText = "RETURN";
+  }
+  const secondaryText = node.typeName ?? "";
+
+  const mainWidthPx = measureTextWidthPx(mainText, '600 14px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif');
+  const secondaryWidthPx = measureTextWidthPx(secondaryText, '600 14px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif');
   const subtitleWidthPx = measureTextWidthPx(
     `${node.id} • ${template.label}`,
     '400 12px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
   );
-  const maxLineWidthPx = Math.max(titleWidthPx, subtitleWidthPx);
-  const horizontalPaddingPx = node.type === "connection-mark-source" || node.type === "connection-mark-sink" ? 48 : 24;
+  
+  const maxLineWidthPx = Math.max(mainWidthPx, secondaryWidthPx, subtitleWidthPx);
+  let horizontalPaddingPx = 40;
+  if (node.type === "connection-mark-source") {
+    horizontalPaddingPx = 72; // More space on left
+  } else if (node.type === "connection-mark-sink") {
+    horizontalPaddingPx = 72; // More space on right
+  }
   const executionOrderReservePx = getExecutionOrderReservePx(node);
   const contentWidthRatio = getContentWidthRatio(node);
   const requiredWidthPx = Math.ceil((maxLineWidthPx + horizontalPaddingPx + executionOrderReservePx) / contentWidthRatio);

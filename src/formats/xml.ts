@@ -70,17 +70,17 @@ export const xmlFormat: CfcFormatAdapter = {
       const nodeElement = documentRoot.createElement("node");
       nodeElement.setAttribute("id", node.id);
       nodeElement.setAttribute("type", node.type);
-      // Use helper to produce the export label entry and write it as attribute
-      const labelEntry = getExportLabelEntry(node as any);
-      for (const [k, v] of Object.entries(labelEntry)) {
-        nodeElement.setAttribute(k, v);
-      }
       if (isExecutionOrderedNode(node)) {
         nodeElement.setAttribute("executionOrder", String(executionOrder));
         executionOrder += 1;
       }
       if (node.typeName) {
         nodeElement.setAttribute("typeName", node.typeName);
+      }
+      // Use helper to produce the export label entry and write it as attribute
+      const labelEntry = getExportLabelEntry(node as any);
+      for (const [k, v] of Object.entries(labelEntry)) {
+        nodeElement.setAttribute(k, v);
       }
       nodeElement.setAttribute("x", String(node.x));
       nodeElement.setAttribute("y", String(node.y));

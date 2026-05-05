@@ -310,5 +310,75 @@ describe("PLCopenXML format", () => {
         expect(xmlnsCount).toBe(1);
       }
     });
+
+    it("preserves objectId and creationDateTime across PLCopenXML roundtrips", () => {
+      const sourceXml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <fileHeader companyName="" productName="Test" productVersion="1.0" creationDateTime="2024-01-01T00:00:00Z" />
+  <contentHeader name="Test.project" modificationDateTime="2024-01-02T00:00:00Z">
+    <coordinateInfo>
+      <fbd><scaling x="1" y="1" /></fbd>
+      <ld><scaling x="1" y="1" /></ld>
+      <sfc><scaling x="1" y="1" /></sfc>
+    </coordinateInfo>
+    <addData>
+      <data name="http://www.3s-software.com/plcopenxml/projectinformation" handleUnknown="implementation">
+        <ProjectInformation />
+      </data>
+    </addData>
+  </contentHeader>
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface>
+          <localVars>
+            <variable name="In"><type><INT /></type></variable>
+          </localVars>
+        </interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <inVariable localId="0">
+                  <position x="0" y="0" />
+                  <connectionPointOut><expression /></connectionPointOut>
+                  <expression>In</expression>
+                </inVariable>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+        <addData>
+          <data name="http://www.3s-software.com/plcopenxml/objectid" handleUnknown="discard">
+            <ObjectId>11111111-2222-4333-8444-555555555555</ObjectId>
+          </data>
+        </addData>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+  <addData>
+    <data name="http://www.3s-software.com/plcopenxml/projectstructure" handleUnknown="discard">
+      <ProjectStructure><Object Name="CFC" ObjectId="11111111-2222-4333-8444-555555555555" /></ProjectStructure>
+    </data>
+  </addData>
+</project>`;
+
+      const graph = plcopenXmlFormat.deserialize(sourceXml);
+      const firstExport = plcopenXmlFormat.serialize(graph);
+      const secondExport = plcopenXmlFormat.serialize(plcopenXmlFormat.deserialize(firstExport));
+
+      expect(firstExport).toContain('creationDateTime="2024-01-01T00:00:00Z"');
+      expect(firstExport).toContain('modificationDateTime="2024-01-02T00:00:00Z"');
+      expect(firstExport).toContain("<ObjectId>11111111-2222-4333-8444-555555555555</ObjectId>");
+      expect(firstExport).toContain('ObjectId="11111111-2222-4333-8444-555555555555"');
+
+      expect(secondExport).toContain('creationDateTime="2024-01-01T00:00:00Z"');
+      expect(secondExport).toContain('modificationDateTime="2024-01-02T00:00:00Z"');
+      expect(secondExport).toContain("<ObjectId>11111111-2222-4333-8444-555555555555</ObjectId>");
+      expect(secondExport).toContain('ObjectId="11111111-2222-4333-8444-555555555555"');
+    });
   });
 });

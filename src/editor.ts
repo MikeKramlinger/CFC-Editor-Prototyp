@@ -301,6 +301,8 @@ export class CfcEditor {
 
   loadGraph(nextGraph: CfcGraph): void {
     this.graph = cloneGraph(nextGraph);
+    // Ensure nodes fit their labels/types when loading from external formats
+    this.graph.nodes.forEach((node) => fitNodeWidthToLabel(node));
     this.ensureUniqueGraphIds();
     this.normalizeAllNodesToGrid();
     this.bumpRoutingCacheVersion();

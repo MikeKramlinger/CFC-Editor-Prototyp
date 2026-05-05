@@ -1519,7 +1519,18 @@ installKeyboardShortcutsController({
     editor.redo();
   },
   onSaveGraphContext: () => toolbar.triggerExport(),
-  onSaveDataContext: () => toolbar.triggerImport(),
+  onSaveDataContext: () => {
+    // If the data panel is showing declarations, save declarations only.
+    if (dataPanel.getMode() === "declaration") {
+      const declText = dataPanel.getDeclarationText();
+      editor.setDeclarations(declText);
+      // also keep panel and editor in sync
+      dataPanel.setDeclarationText(declText);
+      return;
+    }
+    // Otherwise perform full import (deserialize into graph)
+    toolbar.triggerImport();
+  },
   onSelectAll: () => {
     if (isQuizModeActive) {
       return;
