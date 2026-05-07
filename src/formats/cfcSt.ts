@@ -1,5 +1,7 @@
 import type { CfcFormatAdapter } from "./types.js";
 import { CfcGraph, CfcNode, CfcConnection, createEmptyGraph, CfcNodeType, getNodeTemplateByType } from "../model.js";
+import { fitNodeWidthToLabel } from "../core/editor/nodeSizing.js";
+import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
 import { canOmitPortReference, serializePort } from "./shared.js";
 
 class CfcSTParser {
@@ -108,10 +110,10 @@ class CfcSTParser {
             if (/^".*"$/.test(val)) val = val.slice(1, -1);
             const num = Number(val);
             if (key === "@id") activeNode.id = val;
+            else if ((key === "@order" || key === "@executionOrder") && isExecutionOrderedNode(activeNode)) activeNode.executionOrder = isNaN(num) ? undefined : Math.max(1, Math.floor(num));
             else if (key === "@x") activeNode.x = isNaN(num) ? 0 : num;
             else if (key === "@y") activeNode.y = isNaN(num) ? 0 : num;
-            else if (key === "@w") activeNode.width = isNaN(num) ? activeNode.width : num;
-            else if (key === "@h") activeNode.height = isNaN(num) ? activeNode.height : num;
+             else if (key === "@h") activeNode.height = isNaN(num) ? activeNode.height : num;
             else {
               // ignore other metadata for now
             }
@@ -155,7 +157,7 @@ class CfcSTParser {
               case "INPUT": baseType = "input"; parsedParam = param || undefined; break;
               case "OUTPUT": baseType = "output"; parsedParam = param || undefined; break;
               case "BOX": baseType = "box"; parsedParam = param || undefined; break;
-              case "BOX_EN": baseType = "box-en-eno"; parsedParam = param || undefined; break;
+              case "BOX_EN_ENO": baseType = "box-en-eno"; parsedParam = param || undefined; break;
               case "LABEL": baseType = "label"; parsedParam = param || undefined; break;
               case "JUMP": baseType = "jump"; parsedParam = param || undefined; break;
               case "RETURN": baseType = "return"; break;
@@ -173,7 +175,7 @@ class CfcSTParser {
             let finalLabel = "";
             let finalTypeName: string | undefined = undefined;
 
-            if (baseType === "box") {
+            if (baseType === "box" || baseType === "box-en-eno") {
               // BOX keeps the left identifier as label; parentheses are the typeName
               finalLabel = hasColon ? leftName : "";
               finalTypeName = parsedParam ? parsedParam.trim() : undefined;
@@ -188,8 +190,8 @@ class CfcSTParser {
                 finalTypeName = parsedParam ? parsedParam.trim() : undefined;
               } else {
                 // new form `TYPE(Label)` -> label is in parentheses
-                finalLabel = parsedParam ? parsedParam.trim() : "";
-                finalTypeName = undefined;
+              finalLabel = parsedParam ? parsedParam.trim() : "";
+              finalTypeName = undefined;
               }
             }
 
@@ -215,7 +217,7 @@ class CfcSTParser {
     const nodeByName = new Map<string, CfcNode>();
     graph.nodes.forEach((node) => {
       nodeByName.set(node.id, node);
-      nodeByName.set(node.label, node);
+        nodeByName.set(node.label, node);
       if (node.typeName) {
         nodeByName.set(node.typeName, node);
       }
@@ -282,6 +284,10 @@ class CfcSTParser {
     } else {
       graph.declarations = declLines.join("\n");
     }
+    
+    // Ensure all nodes are properly sized to fit their content
+    graph.nodes.forEach(node => fitNodeWidthToLabel(node));
+    
     return graph;
   }
 }
@@ -326,7 +332,7 @@ export const cfcStFormat: CfcFormatAdapter = {
           case "input": return "INPUT";
           case "output": return "OUTPUT";
           case "box": return "BOX";
-          case "box-en-eno": return "BOX_EN";
+          case "box-en-eno": return "BOX_EN_ENO";
           case "jump": return "JUMP";
           case "label": return "LABEL";
           case "return": return "RETURN";
@@ -340,9 +346,12 @@ export const cfcStFormat: CfcFormatAdapter = {
       };
 
       const token = tokenForType(node.type);
+      const executionOrder = isExecutionOrderedNode(node) && typeof node.executionOrder === "number"
+        ? Math.max(1, Math.floor(node.executionOrder))
+        : null;
       let header = "";
 
-      if (node.type === "box") {
+      if (node.type === "box" || node.type === "box-en-eno") {
         const labelPart = node.label && node.label.trim() ? `${node.label} : ` : "";
         header = `${labelPart}${token}(${node.typeName || ""})`;
       } else if (node.type === "comment") {
@@ -357,6 +366,9 @@ export const cfcStFormat: CfcFormatAdapter = {
 
       result += `${header} {\n`;
       result += `  @id = ${node.id},\n`;
+      if (executionOrder !== null) {
+        result += `  @order = ${executionOrder},\n`;
+      }
       result += `  @x = ${node.x},\n`;
       result += `  @y = ${node.y}\n`;
       result += `}\n\n`;
