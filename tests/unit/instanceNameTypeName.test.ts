@@ -155,7 +155,6 @@ describe("instanceName and typeName serialization", () => {
         width: 80,
         height: 60,
         typeName: "FB_Box",
-        declarationName: "box_instance_1",
       };
       graph.nodes.push(boxNode);
 

@@ -60,6 +60,7 @@ export type NormalizedNodeName = string;
 export interface CfcNode {
   id: string;
   type: CfcNodeType;
+  executionOrder?: number;
   typeName?: NormalizedNodeName;
   label: NormalizedNodeName;
   x: number;
@@ -78,6 +79,7 @@ export interface CfcConnection {
 
 export interface CfcGraph {
   version: string;
+  creationDateTime?: string;
   nodes: CfcNode[];
   connections: CfcConnection[];
   declarations: string; // Raw text der Deklarationen (PROGRAM CFC VAR ... END_VAR)
@@ -92,6 +94,7 @@ export const createEmptyGraph = (): CfcGraph => ({
 
 export const cloneGraph = (graph: CfcGraph): CfcGraph => ({
   version: graph.version,
+  creationDateTime: graph.creationDateTime,
   nodes: graph.nodes.map((node) => ({ ...node })),
   connections: graph.connections.map((connection) => ({ ...connection })),
   declarations: graph.declarations,

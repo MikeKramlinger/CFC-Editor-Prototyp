@@ -181,6 +181,10 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
     node.label = isBoxNode ? sanitizeDeclarationName(entry.declarationName) || node.label : entry.declarationName;
   }
 
+  if (isExecutionOrderedNode(node)) {
+    node.executionOrder = executionOrder;
+  }
+
   // Keep geometry internal and derive width automatically from label/type.
   fitNodeWidthToLabel(node);
 
@@ -303,7 +307,9 @@ export const toExecutionOrderedSerializableGraph = (
     version: graph.version,
     nodes: graph.nodes.map((node) => {
       const isExecOrdered = isExecutionOrderedNode(node);
-      const executionOrder = isExecOrdered ? getExecutionOrderByNodeId(graph.nodes, node.id) : null;
+      const executionOrder = typeof node.executionOrder === "number"
+        ? Math.max(1, Math.floor(node.executionOrder))
+        : (isExecOrdered ? getExecutionOrderByNodeId(graph.nodes, node.id) : null);
 
       return {
         id: node.id,

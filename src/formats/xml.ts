@@ -8,8 +8,6 @@ import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
 import type { CfcFormatAdapter } from "./types.js";
 import { buildOrderedNodesFromRaw, buildValidConnectionsFromRaw, deriveDeclarationsFromNodes, serializePort, getImportLabelValue, getExportLabelEntry } from "./shared.js";
 
-const NAMESPACE = "http://www.plcopen.org/xml/tc6_0200";
-
 const requireAttr = (element: Element, name: string): string => {
   const value = element.getAttribute(name);
   if (!value) {
@@ -65,14 +63,15 @@ export const xmlFormat: CfcFormatAdapter = {
     const nodeTypeById = new Map(graph.nodes.map((node) => [node.id, node.type]));
 
     const nodes = documentRoot.createElement("nodes");
-    let executionOrder = 1;
+    let executionOrderIndex = 0;
     graph.nodes.forEach((node) => {
       const nodeElement = documentRoot.createElement("node");
       nodeElement.setAttribute("id", node.id);
       nodeElement.setAttribute("type", node.type);
       if (isExecutionOrderedNode(node)) {
-        nodeElement.setAttribute("executionOrder", String(executionOrder));
-        executionOrder += 1;
+        const nodeExecutionOrder = typeof node.executionOrder === "number" ? Math.max(1, Math.floor(node.executionOrder)) : executionOrderIndex + 1;
+        nodeElement.setAttribute("executionOrder", String(nodeExecutionOrder));
+        executionOrderIndex++;
       }
       if (node.typeName) {
         nodeElement.setAttribute("typeName", node.typeName);

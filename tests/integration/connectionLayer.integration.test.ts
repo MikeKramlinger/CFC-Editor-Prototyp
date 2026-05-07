@@ -53,8 +53,8 @@ describe("connection layer integration", () => {
       createAStarConnectionPath: () => document.createElementNS("http://www.w3.org/2000/svg", "path"),
       onConnectionClick: () => undefined,
       canDropConnection: () => true,
+      isInteractionLocked: false,
     });
-
     expect(hoveredPort.classList.contains("cfc-port--drop-allowed")).toBe(true);
   });
 
@@ -95,6 +95,7 @@ describe("connection layer integration", () => {
       createAStarConnectionPath: () => document.createElementNS("http://www.w3.org/2000/svg", "path"),
       onConnectionClick: () => undefined,
       canDropConnection: () => false,
+      isInteractionLocked: false,
     });
 
     expect(hoveredPort.classList.contains("cfc-port--drop-blocked")).toBe(true);

@@ -3,6 +3,7 @@ import {
   getExecutionOrderByNodeId,
   getExecutionOrderedNodeCount,
   isExecutionOrderedNode,
+  normalizeExecutionOrders,
   swapNodeExecutionOrder,
 } from "../../src/core/graph/executionOrder.js";
 import { createNode } from "./helpers.js";
@@ -40,5 +41,18 @@ describe("execution order", () => {
 
     expect(swapped[1]?.id).toBe("N3");
     expect(swapped[2]?.id).toBe("N2");
+  });
+
+  it("normalizes duplicate and missing executionOrder values", () => {
+    const nodes = [
+      createNode("N1", "input", 0, 0),
+      createNode("N2", "box", 1, 0, { executionOrder: 3 }),
+      createNode("N3", "box", 2, 0),
+      createNode("N4", "box", 3, 0, { executionOrder: 3 }),
+    ];
+
+    const normalized = normalizeExecutionOrders(nodes);
+
+    expect(normalized.map((node) => node.executionOrder)).toEqual([undefined, 1, 2, 3]);
   });
 });

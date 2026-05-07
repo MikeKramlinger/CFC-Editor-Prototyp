@@ -12,13 +12,7 @@ describe("CFC-ST resizing", () => {
     // Dump for debug
     // eslint-disable-next-line no-console
     console.log({ typeName: node.typeName, width: node.width, templateWidth: template.width });
-    // Confirm node initially has template width
-    expect(node.width).toBe(template.width);
-    // Manually apply sizing to confirm sizing logic works in this environment
-    const { fitNodeWidthToLabel } = await import("../../src/core/editor/nodeSizing.js");
-    fitNodeWidthToLabel(node);
-    // eslint-disable-next-line no-console
-    console.log({ widthAfterFit: node.width });
+    // Confirm node was resized to fit the long typeName during deserialization
     expect(node.width).toBeGreaterThan(template.width);
   });
 });

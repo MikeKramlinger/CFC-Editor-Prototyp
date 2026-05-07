@@ -952,6 +952,7 @@ const dataPanel = createDataPanelController({
 editor.setDeclarations(dataPanel.getDeclarationText());
 onEditorDeclarationsChanged = () => {
   editor.setDeclarations(dataPanel.getDeclarationText());
+  currentGraph = editor.getGraph();
 };
 
 // Funktion, um Deklarationen vom Graph in den DataPanel zu laden

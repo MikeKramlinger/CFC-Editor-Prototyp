@@ -1,8 +1,33 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { plcopenXmlFormat } from "../../src/formats/plcopenXml.js";
 import { createGraph, createNode, createConnection } from "./helpers.js";
+
+const originalDate = globalThis.Date;
+
+const installMockDate = (isoString: string): void => {
+  class MockDate extends originalDate {
+    constructor(...args: [] | [number | string | Date]) {
+      if (args.length === 0) {
+        super(isoString);
+        return;
+      }
+
+      super(args[0]);
+    }
+
+    static now(): number {
+      return originalDate.parse(isoString);
+    }
+  }
+
+  globalThis.Date = MockDate as unknown as DateConstructor;
+};
+
+afterEach(() => {
+  globalThis.Date = originalDate;
+});
 
 describe("PLCopenXML format", () => {
   describe("serialization", () => {
@@ -311,7 +336,9 @@ describe("PLCopenXML format", () => {
       }
     });
 
-    it("preserves objectId and creationDateTime across PLCopenXML roundtrips", () => {
+    it("preserves creationDateTime across imports and writes fresh modification timestamps", () => {
+      installMockDate("2026-05-06T12:34:56.789Z");
+
       const sourceXml = `<?xml version="1.0" encoding="utf-8"?>
 <project xmlns="http://www.plcopen.org/xml/tc6_0200">
   <fileHeader companyName="" productName="Test" productVersion="1.0" creationDateTime="2024-01-01T00:00:00Z" />
@@ -368,17 +395,19 @@ describe("PLCopenXML format", () => {
 
       const graph = plcopenXmlFormat.deserialize(sourceXml);
       const firstExport = plcopenXmlFormat.serialize(graph);
+
+      installMockDate("2026-05-06T12:45:56.789Z");
       const secondExport = plcopenXmlFormat.serialize(plcopenXmlFormat.deserialize(firstExport));
 
       expect(firstExport).toContain('creationDateTime="2024-01-01T00:00:00Z"');
-      expect(firstExport).toContain('modificationDateTime="2024-01-02T00:00:00Z"');
-      expect(firstExport).toContain("<ObjectId>11111111-2222-4333-8444-555555555555</ObjectId>");
-      expect(firstExport).toContain('ObjectId="11111111-2222-4333-8444-555555555555"');
+      expect(firstExport).toContain('modificationDateTime="2026-05-06T12:34:56.789Z"');
+      expect(firstExport).toContain("<ObjectId>1e2eb4a4-bd79-475c-b9b8-4e15d17185c0</ObjectId>");
+      expect(firstExport).toContain('ObjectId="1e2eb4a4-bd79-475c-b9b8-4e15d17185c0"');
 
       expect(secondExport).toContain('creationDateTime="2024-01-01T00:00:00Z"');
-      expect(secondExport).toContain('modificationDateTime="2024-01-02T00:00:00Z"');
-      expect(secondExport).toContain("<ObjectId>11111111-2222-4333-8444-555555555555</ObjectId>");
-      expect(secondExport).toContain('ObjectId="11111111-2222-4333-8444-555555555555"');
+      expect(secondExport).toContain('modificationDateTime="2026-05-06T12:45:56.789Z"');
+      expect(secondExport).toContain("<ObjectId>1e2eb4a4-bd79-475c-b9b8-4e15d17185c0</ObjectId>");
+      expect(secondExport).toContain('ObjectId="1e2eb4a4-bd79-475c-b9b8-4e15d17185c0"');
     });
   });
 });

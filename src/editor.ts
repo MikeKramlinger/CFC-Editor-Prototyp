@@ -11,6 +11,9 @@ import { parseDeclarations, syncCreatedNodeDeclaration } from "./declarations/in
 import {
   getExecutionOrderByNodeId,
   getExecutionOrderedNodeCount,
+  getNextExecutionOrder,
+  isExecutionOrderedNode,
+  normalizeExecutionOrders,
   swapNodeExecutionOrder,
 } from "./core/graph/executionOrder.js";
 import { getConnectionCreationBlockReason } from "./core/graph/connectionRules.js";
@@ -149,12 +152,17 @@ export class CfcEditor {
     });
   }
 
+  private normalizeExecutionOrderValues(): void {
+    this.graph.nodes = normalizeExecutionOrders(this.graph.nodes);
+  }
+
   constructor(canvas: HTMLDivElement, initialGraph: CfcGraph, options: EditorOptions) {
     this.canvas = canvas;
     this.options = options;
     this.history = createGraphHistory(100);
     this.graph = cloneGraph(initialGraph);
     this.ensureUniqueGraphIds();
+    this.normalizeExecutionOrderValues();
 
     // Parse Deklarationen
     const declarations = parseDeclarations(this.graph.declarations);
@@ -303,6 +311,7 @@ export class CfcEditor {
     this.graph = cloneGraph(nextGraph);
     // Ensure nodes fit their labels/types when loading from external formats
     this.graph.nodes.forEach((node) => fitNodeWidthToLabel(node));
+    this.normalizeExecutionOrderValues();
     this.ensureUniqueGraphIds();
     this.normalizeAllNodesToGrid();
     this.bumpRoutingCacheVersion();
@@ -351,6 +360,7 @@ export class CfcEditor {
     }
 
     this.graph = next;
+    this.normalizeExecutionOrderValues();
     this.bumpRoutingCacheVersion();
     this.connectionDrag = null;
     this.dragHistoryBefore = null;
@@ -454,6 +464,9 @@ export class CfcEditor {
       width: template.width,
       height: template.height,
     };
+    if (isExecutionOrderedNode(node)) {
+      node.executionOrder = getNextExecutionOrder(this.graph.nodes);
+    }
     fitNodeWidthToLabel(node);
     return node;
   }
@@ -713,6 +726,7 @@ export class CfcEditor {
   }
 
   private finalizeGraphMutation(before: CfcGraph, options: GraphMutationFinalizeOptions = {}): void {
+    this.normalizeExecutionOrderValues();
     this.history.commit(before, this.graph);
     if (options.bumpRoutingCache) {
       this.bumpRoutingCacheVersion();

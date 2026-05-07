@@ -64,7 +64,7 @@ const computeFittedNodeWidth = (node: CfcNode): number => {
   );
   
   const maxLineWidthPx = Math.max(mainWidthPx, secondaryWidthPx, subtitleWidthPx);
-  let horizontalPaddingPx = 40;
+  let horizontalPaddingPx = 24;
   if (node.type === "connection-mark-source") {
     horizontalPaddingPx = 72; // More space on left
   } else if (node.type === "connection-mark-sink") {

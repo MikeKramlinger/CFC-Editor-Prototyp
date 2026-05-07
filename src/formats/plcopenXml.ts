@@ -6,13 +6,14 @@ import {
   type CfcNode,
   type CfcNodeType,
 } from "../model.js";
-import { getExecutionOrderByNodeId, isExecutionOrderedNode } from "../core/graph/executionOrder.js";
+import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
 import { generateDeclarations, isElementaryType, parseDeclarations, type Variable } from "../declarations/index.js";
 import type { CfcFormatAdapter } from "./types.js";
 import { deriveDeclarationsFromNodes } from "./shared.js";
 import { fitNodeWidthToLabel } from "../core/editor/nodeSizing.js";
 
 const NAMESPACE = "http://www.plcopen.org/xml/tc6_0200";
+const FIXED_OBJECT_ID = "1e2eb4a4-bd79-475c-b9b8-4e15d17185c0";
 const OBJECT_ID_DATA_NAME = "http://www.3s-software.com/plcopenxml/objectid";
 const PROJECT_STRUCTURE_DATA_NAME = "http://www.3s-software.com/plcopenxml/projectstructure";
 
@@ -591,9 +592,9 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     const root = doc.documentElement;
 
     const now = new Date().toISOString();
-    const creationDateTime = graph.plcopenXmlMetadata?.creationDateTime ?? now;
-    const modificationDateTime = graph.plcopenXmlMetadata?.modificationDateTime ?? now;
-    const idValue = graph.plcopenXmlMetadata?.objectId ?? makeObjectId();
+    const creationDateTime = graph.creationDateTime ?? now;
+    const modificationDateTime = now;
+    const idValue = FIXED_OBJECT_ID;
     const fileHeader = doc.createElementNS(NAMESPACE, "fileHeader");
     fileHeader.setAttribute("companyName", "");
     fileHeader.setAttribute("productName", "CODESYS CFC-Editor Prototype");
@@ -699,12 +700,15 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     const inputConnectionTargets = new Map<string, Array<Element | null>>();
     const nodeElementByNodeId = new Map<string, Element>(); // Track elements for connector insertion
 
+    let executionOrderIndex = 0;
     graph.nodes.forEach((node, index) => {
       const localId = localIdByNodeId.get(node.id) ?? String(index);
-      const template = getNodeTemplateByType(node.type);
       const executionOrder = isExecutionOrderedNode(node)
-        ? getExecutionOrderByNodeId(graph.nodes, node.id) ?? index + 1
-        : index + 1;
+        ? (typeof node.executionOrder === "number" ? Math.max(1, Math.floor(node.executionOrder)) : executionOrderIndex + 1)
+        : executionOrderIndex + 1;
+      if (isExecutionOrderedNode(node)) {
+        executionOrderIndex++;
+      }
 
       if (node.type === "input") {
         const inVariable = doc.createElementNS(NAMESPACE, "inVariable");
@@ -1118,14 +1122,8 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     graph.declarations = parseInterfaceDeclarations(xml) ?? deriveDeclarationsFromNodes(graph.nodes);
 
     const creationDateTime = xml.getElementsByTagNameNS("*", "fileHeader").item(0)?.getAttribute("creationDateTime")?.trim() || undefined;
-    const modificationDateTime = xml.getElementsByTagNameNS("*", "contentHeader").item(0)?.getAttribute("modificationDateTime")?.trim() || undefined;
-    const objectId = readPlcopenObjectId(xml);
-    if (creationDateTime || modificationDateTime || objectId) {
-      graph.plcopenXmlMetadata = {
-        creationDateTime,
-        modificationDateTime,
-        objectId,
-      };
+    if (creationDateTime) {
+      graph.creationDateTime = creationDateTime;
     }
 
     return graph;
