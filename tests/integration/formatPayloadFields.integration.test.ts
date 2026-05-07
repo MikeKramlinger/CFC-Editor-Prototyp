@@ -99,10 +99,10 @@ describe("format payload fields integration", () => {
           <node id="N11" type="connection-mark-sink" signal="CM-Sink-1" x="1" y="12"/>
           <node id="N12" type="comment" content="Doc" x="1" y="18"/>
         </nodes>
-      <connections>
+        <connections>
           <connection id="C1" from="N1" fromPin="output" to="N3" toPin="input:0"/>
           <connection id="C2" from="N3" fromPin="output:0" to="N2" toPin="input"/>
-      </connections>
+        </connections>
       </cfcEditor>"
     `);
   });

@@ -21,6 +21,7 @@ const makeGraph = (): CfcGraph => {
         toPin: "input:0",
       },
     ],
+    declarations: "PROGRAM CFC\nVAR\nEND_VAR",
   };
 };
 

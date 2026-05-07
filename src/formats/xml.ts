@@ -7,6 +7,7 @@ import {
 import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
 import type { CfcFormatAdapter } from "./types.js";
 import { buildOrderedNodesFromRaw, buildValidConnectionsFromRaw, deriveDeclarationsFromNodes, serializePort, getImportLabelValue, getExportLabelEntry } from "./shared.js";
+import { parseDeclarations, generateDeclarations } from "../declarations/parser.js";
 
 const requireAttr = (element: Element, name: string): string => {
   const value = element.getAttribute(name);
@@ -97,7 +98,20 @@ export const xmlFormat: CfcFormatAdapter = {
       connections.append(connectionElement);
     });
 
+    if (graph.declarations && graph.declarations.trim().length > 0) {
+      const parsed = parseDeclarations(graph.declarations);
+      const declElem = documentRoot.createElement("declarations");
+      parsed.variables.forEach((v) => {
+        const varElem = documentRoot.createElement("variable");
+        varElem.setAttribute("name", v.name);
+        varElem.setAttribute("type", v.type);
+        declElem.append(varElem);
+      });
+
+      root.append(declElem, nodes, connections);
+    } else {
       root.append(nodes, connections);
+    }
 
     const serialized = new XMLSerializer().serializeToString(documentRoot).replace(/^<\?xml[^>]*>\s*/i, "");
     return `<?xml version="1.0" encoding="UTF-8"?>\n${formatXml(serialized)}`;
@@ -167,7 +181,21 @@ export const xmlFormat: CfcFormatAdapter = {
 
     const nodeIds = new Set(graph.nodes.map((node) => node.id));
     graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
+
+    const declElements = cfc.getElementsByTagNameNS("*", "declarations");
+    const declEl = declElements && declElements.length > 0 ? declElements.item(0) : null;
+    const variableElements = declEl ? Array.from(declEl.getElementsByTagName("variable")) : [];
+
+    if (variableElements.length > 0) {
+      const variables = variableElements.map((ve) => ({
+        name: ve.getAttribute("name") ?? "",
+        type: ve.getAttribute("type") ?? ""
+      }));
+      
+      graph.declarations = generateDeclarations(variables as any);
+    } else {
       graph.declarations = deriveDeclarationsFromNodes(graph.nodes);
+    }
 
     return graph;
   },

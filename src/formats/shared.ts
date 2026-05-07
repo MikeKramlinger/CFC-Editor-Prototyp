@@ -300,7 +300,7 @@ export const buildValidConnectionsFromRaw = (connectionsRaw: unknown[], nodeIds:
 
 export const toExecutionOrderedSerializableGraph = (
   graph: CfcGraph,
-): { version: string; nodes: Array<Record<string, unknown>>; connections: CfcConnection[] } => {
+): { version: string; nodes: Array<Record<string, unknown>>; connections: CfcConnection[]; declarations?: string } => {
   const nodeTypeById = new Map(graph.nodes.map((node) => [node.id, node.type]));
 
   return {
@@ -328,6 +328,7 @@ export const toExecutionOrderedSerializableGraph = (
       toNodeId: connection.toNodeId,
       toPin: serializePort(connection.toPin, "input", nodeTypeById.get(connection.toNodeId)),
     })),
+    declarations: typeof graph.declarations === "string" ? graph.declarations : deriveDeclarationsFromNodes(graph.nodes),
   };
 };
 
