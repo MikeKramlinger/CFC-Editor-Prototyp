@@ -11,8 +11,8 @@ describe("connection drag utilities", () => {
     const state = createConnectionDragState("N1", "OUT1", "output", 1, 2, 3, 4, 100, 200);
     expect(state).toMatchObject({
       fromNodeId: "N1",
-      fromPort: "OUT1",
-      fromPortKind: "output",
+      fromPin: "OUT1",
+      fromPinKind: "output",
       startX: 1,
       startY: 2,
       currentX: 3,

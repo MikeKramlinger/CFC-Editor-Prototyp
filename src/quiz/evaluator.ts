@@ -208,10 +208,10 @@ const hasExpectedConnection = (graph: CfcGraph, expectation: QuizConnectionExpec
     if (!fromNodeIds.has(connection.fromNodeId) || !toNodeIds.has(connection.toNodeId)) {
       return false;
     }
-    if (expectation.fromPort && connection.fromPort !== expectation.fromPort) {
+    if (expectation.fromPin && connection.fromPin !== expectation.fromPin) {
       return false;
     }
-    if (expectation.toPort && connection.toPort !== expectation.toPort) {
+    if (expectation.toPin && connection.toPin !== expectation.toPin) {
       return false;
     }
     return true;

@@ -7,9 +7,9 @@ describe("connection rules", () => {
     const connections = [createConnection("C1", "N1", "N2")];
     const reason = getConnectionCreationBlockReason(connections, {
       fromNodeId: "N1",
-      fromPort: "OUT1",
+      fromPin: "OUT1",
       toNodeId: "N2",
-      toPort: "IN1",
+      toPin: "IN1",
     });
 
     expect(reason).toBe("duplicate");
@@ -19,9 +19,9 @@ describe("connection rules", () => {
     const connections = [createConnection("C1", "N1", "N2")];
     const reason = getConnectionCreationBlockReason(connections, {
       fromNodeId: "N3",
-      fromPort: "OUT1",
+      fromPin: "OUT1",
       toNodeId: "N2",
-      toPort: "IN1",
+      toPin: "IN1",
     });
 
     expect(reason).toBe("input-occupied");
@@ -31,9 +31,9 @@ describe("connection rules", () => {
     const connections = [createConnection("C1", "N1", "N2")];
     const reason = getConnectionCreationBlockReason(connections, {
       fromNodeId: "N3",
-      fromPort: "OUT2",
+      fromPin: "OUT2",
       toNodeId: "N2",
-      toPort: "IN2",
+      toPin: "IN2",
     });
 
     expect(reason).toBeNull();

@@ -23,8 +23,8 @@ describe("format payload fields integration", () => {
       createNode({ id: "N12", type: "comment", label: "Doc", x: 1, y: 18 }),
     ],
     [
-      createConnection("C1", "N1", "N3", { fromPort: "output:0", toPort: "input:0" }),
-      createConnection("C2", "N3", "N2", { fromPort: "output:0", toPort: "input:0" }),
+      createConnection("C1", "N1", "N3", { fromPin: "output:0", toPin: "input:0" }),
+      createConnection("C2", "N3", "N2", { fromPin: "output:0", toPin: "input:0" }),
     ],
     "1.2",
   );
@@ -84,6 +84,7 @@ describe("format payload fields integration", () => {
     expect(raw).toMatchInlineSnapshot(`
       "<?xml version="1.0" encoding="UTF-8"?>
       <cfcEditor version="1.2">
+        <declarations/>
         <nodes>
           <node id="N1" type="input" expression="In" x="1" y="2"/>
           <node id="N2" type="output" executionOrder="1" expression="Out" x="22" y="2"/>
@@ -98,10 +99,10 @@ describe("format payload fields integration", () => {
           <node id="N11" type="connection-mark-sink" signal="CM-Sink-1" x="1" y="12"/>
           <node id="N12" type="comment" content="Doc" x="1" y="18"/>
         </nodes>
-        <connections>
-          <connection id="C1" from="N1" fromPort="output" to="N3" toPort="input:0"/>
-          <connection id="C2" from="N3" fromPort="output:0" to="N2" toPort="input"/>
-        </connections>
+      <connections>
+          <connection id="C1" from="N1" fromPin="output" to="N3" toPin="input:0"/>
+          <connection id="C2" from="N3" fromPin="output:0" to="N2" toPin="input"/>
+      </connections>
       </cfcEditor>"
     `);
   });
@@ -133,16 +134,16 @@ describe("format payload fields integration", () => {
     expect(parsed.connections[0]).toMatchObject({
       id: "C1",
       fromNodeId: "N1",
-      fromPort: "output",
+      fromPin: "output",
       toNodeId: "N3",
-      toPort: "input:0",
+      toPin: "input:0",
     });
     expect(parsed.connections[1]).toMatchObject({
       id: "C2",
       fromNodeId: "N3",
-      fromPort: "output:0",
+      fromPin: "output:0",
       toNodeId: "N2",
-      toPort: "input",
+      toPin: "input",
     });
   });
 

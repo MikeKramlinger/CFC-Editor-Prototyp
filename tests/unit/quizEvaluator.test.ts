@@ -16,9 +16,9 @@ const makeGraph = (): CfcGraph => {
       {
         id: "C1",
         fromNodeId: "N1",
-        fromPort: "output:0",
+        fromPin: "output:0",
         toNodeId: "N2",
-        toPort: "input:0",
+        toPin: "input:0",
       },
     ],
   };

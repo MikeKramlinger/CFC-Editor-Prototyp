@@ -31,8 +31,8 @@ describe("connection lifecycle integration", () => {
 
     const drag = beginConnectionDrag({
       fromNodeId: "N1",
-      fromPort: "output:0",
-      fromPortKind: "output",
+      fromPin: "output:0",
+      fromPinKind: "output",
       clientX: 100,
       clientY: 100,
       findNode: (nodeId) => ({ id: nodeId, type: "box", label: "Box", x: 0, y: 0, width: 6, height: 3 }),
@@ -46,7 +46,7 @@ describe("connection lifecycle integration", () => {
     expect(drag).not.toBeNull();
     const moved = moveConnectionDrag(drag!, 110, 110, 100, 100);
 
-    const created: Array<{ fromNodeId: string; toNodeId: string; fromPort: string; toPort: string }> = [];
+    const created: Array<{ fromNodeId: string; toNodeId: string; fromPin: string; toPin: string }> = [];
     finishConnectionDrag({
       state: moved,
       graphConnections: [],
@@ -59,9 +59,9 @@ describe("connection lifecycle integration", () => {
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({
       fromNodeId: "N1",
-      fromPort: "output:0",
+      fromPin: "output:0",
       toNodeId: "N2",
-      toPort: "input:0",
+      toPin: "input:0",
     });
   });
 
@@ -74,12 +74,12 @@ describe("connection lifecycle integration", () => {
 
     setElementFromPoint(targetPort);
 
-    const created: Array<{ fromNodeId: string; toNodeId: string; fromPort: string; toPort: string }> = [];
+    const created: Array<{ fromNodeId: string; toNodeId: string; fromPin: string; toPin: string }> = [];
     finishConnectionDrag({
       state: {
         fromNodeId: "N1",
-        fromPort: "input:1",
-        fromPortKind: "input",
+        fromPin: "input:1",
+        fromPinKind: "input",
         startX: 0,
         startY: 0,
         currentX: 1,
@@ -96,9 +96,9 @@ describe("connection lifecycle integration", () => {
 
     expect(created[0]).toMatchObject({
       fromNodeId: "N9",
-      fromPort: "output:0",
+      fromPin: "output:0",
       toNodeId: "N1",
-      toPort: "input:1",
+      toPin: "input:1",
     });
   });
 
@@ -116,8 +116,8 @@ describe("connection lifecycle integration", () => {
     finishConnectionDrag({
       state: {
         fromNodeId: "N1",
-        fromPort: "output:0",
-        fromPortKind: "output",
+        fromPin: "output:0",
+        fromPinKind: "output",
         startX: 0,
         startY: 0,
         currentX: 1,
@@ -129,9 +129,9 @@ describe("connection lifecycle integration", () => {
         {
           id: "C1",
           fromNodeId: "N1",
-          fromPort: "output:0",
+          fromPin: "output:0",
           toNodeId: "N2",
-          toPort: "input:0",
+          toPin: "input:0",
         },
       ],
       getNextConnectionId: () => "C2",
@@ -152,13 +152,13 @@ describe("connection lifecycle integration", () => {
     document.body.append(targetPort);
     setElementFromPoint(targetPort);
 
-    const created: Array<{ fromNodeId: string; toNodeId: string; fromPort: string; toPort: string }> = [];
+    const created: Array<{ fromNodeId: string; toNodeId: string; fromPin: string; toPin: string }> = [];
 
     finishConnectionDrag({
       state: {
         fromNodeId: "N1",
-        fromPort: "output:0",
-        fromPortKind: "output",
+        fromPin: "output:0",
+        fromPinKind: "output",
         startX: 0,
         startY: 0,
         currentX: 1,
@@ -176,9 +176,9 @@ describe("connection lifecycle integration", () => {
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({
       fromNodeId: "N1",
-      fromPort: "output:0",
+      fromPin: "output:0",
       toNodeId: "N1",
-      toPort: "input:0",
+      toPin: "input:0",
     });
   });
 });

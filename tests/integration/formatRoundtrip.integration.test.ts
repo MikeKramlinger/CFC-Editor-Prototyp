@@ -18,10 +18,10 @@ const createReferenceGraph = () => {
   ];
 
   const connections = [
-    createConnection("C1", "N1", "N2", { fromPort: "output:0", toPort: "input:0" }),
-    createConnection("C2", "N2", "N3", { fromPort: "output:0", toPort: "input:1" }),
-    createConnection("C3", "N3", "N4", { fromPort: "output:0", toPort: "input:0" }),
-    createConnection("C4", "N4", "N6", { fromPort: "output:1", toPort: "input:0" }),
+    createConnection("C1", "N1", "N2", { fromPin: "output:0", toPin: "input:0" }),
+    createConnection("C2", "N2", "N3", { fromPin: "output:0", toPin: "input:1" }),
+    createConnection("C3", "N3", "N4", { fromPin: "output:0", toPin: "input:0" }),
+    createConnection("C4", "N4", "N6", { fromPin: "output:1", toPin: "input:0" }),
   ];
 
   return createGraph(nodes, connections, "1.1");
@@ -67,8 +67,8 @@ describe("format roundtrip integration", () => {
         { id: "B", type: "box", label: "Y", executionOrder: 1, x: 5, y: 6, width: 7, height: 8 },
       ],
       connections: [
-        { id: "C1", fromNodeId: "B", fromPort: "output", toNodeId: "A", toPort: "input" },
-        { id: "C2", fromNodeId: "B", fromPort: "bad", toNodeId: "NOPE", toPort: "bad" },
+        { id: "C1", fromNodeId: "B", fromPin: "output", toNodeId: "A", toPin: "input" },
+        { id: "C2", fromNodeId: "B", fromPin: "bad", toNodeId: "NOPE", toPin: "bad" },
       ],
     });
 
@@ -77,7 +77,7 @@ describe("format roundtrip integration", () => {
     expect(graph.nodes[0]?.id).toBe("B");
     expect(graph.nodes[1]?.type).toBe("box");
     expect(graph.connections).toHaveLength(1);
-    expect(graph.connections[0]).toMatchObject({ fromPort: "output:0", toPort: "input:0" });
+    expect(graph.connections[0]).toMatchObject({ fromPin: "output:0", toPin: "input:0" });
   });
 
   it("normalizes edge cases on CFC-DSL deserialize", () => {
@@ -94,7 +94,7 @@ B.OUT --> Z.IN1
     expect(graph.version).toBe("1.0");
     expect(graph.nodes[0]?.id).toBe("B");
     expect(graph.connections).toHaveLength(1);
-    expect(graph.connections[0]).toMatchObject({ fromPort: "output:0", toPort: "input:0" });
+    expect(graph.connections[0]).toMatchObject({ fromPin: "output:0", toPin: "input:0" });
   });
 
   it("throws on invalid explicit node type in JSON", () => {

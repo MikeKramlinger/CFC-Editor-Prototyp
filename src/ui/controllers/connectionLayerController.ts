@@ -20,12 +20,12 @@ interface RenderConnectionLayerOptions {
   createAStarConnectionPath: (
     fromNode: CfcNode,
     toNode: CfcNode,
-    fromPortId?: string,
-    toPortId?: string,
+    fromPinId?: string,
+    toPinId?: string,
     connectionId?: string,
   ) => SVGPathElement;
   onConnectionClick: (connectionId: string, event: MouseEvent) => void;
-  canDropConnection: (fromNodeId: string, fromPort: string, toNodeId: string, toPort: string) => boolean;
+  canDropConnection: (fromNodeId: string, fromPin: string, toNodeId: string, toPin: string) => boolean;
 }
 
 export const renderConnectionLayer = (options: RenderConnectionLayerOptions): void => {
@@ -43,8 +43,8 @@ export const renderConnectionLayer = (options: RenderConnectionLayerOptions): vo
       return;
     }
 
-    const fromPoint = options.getOutputPortPoint(fromNode, connection.fromPort);
-    const toPoint = options.getInputPortPoint(toNode, connection.toPort);
+    const fromPoint = options.getOutputPortPoint(fromNode, connection.fromPin);
+    const toPoint = options.getInputPortPoint(toNode, connection.toPin);
 
     const path =
       options.routingMode === "bezier"
@@ -54,7 +54,7 @@ export const renderConnectionLayer = (options: RenderConnectionLayerOptions): vo
             options.unitToPx(toPoint.x),
             options.unitToPx(toPoint.y),
           )
-        : options.createAStarConnectionPath(fromNode, toNode, connection.fromPort, connection.toPort, connection.id);
+        : options.createAStarConnectionPath(fromNode, toNode, connection.fromPin, connection.toPin, connection.id);
     const isFallback = path.classList.contains("cfc-connection--fallback");
     path.classList.add("cfc-connection");
     path.dataset.connectionId = connection.id;
@@ -121,7 +121,7 @@ export const renderConnectionLayer = (options: RenderConnectionLayerOptions): vo
       hitPaths.forEach((path, index) => {
         path.style.pointerEvents = previousHitPointerEvents[index] ?? "";
       });
-      const isDraggingFromOutput = options.connectionDrag.fromPortKind === "output";
+      const isDraggingFromOutput = options.connectionDrag.fromPinKind === "output";
       const hoveredPort = (hoveredElement as HTMLElement | null)?.closest(
         isDraggingFromOutput ? ".cfc-port--input" : ".cfc-port--output",
       ) as HTMLElement | null;
@@ -132,14 +132,14 @@ export const renderConnectionLayer = (options: RenderConnectionLayerOptions): vo
       let canDrop = false;
       if (dropTarget && hoveredPort) {
         const fromNodeId = isDraggingFromOutput ? options.connectionDrag.fromNodeId : dropTarget.nodeId;
-        const fromPort = isDraggingFromOutput ? options.connectionDrag.fromPort : dropTarget.portId;
+        const fromPin = isDraggingFromOutput ? options.connectionDrag.fromPin : dropTarget.portId;
         const toNodeId = isDraggingFromOutput ? dropTarget.nodeId : options.connectionDrag.fromNodeId;
-        const toPort = isDraggingFromOutput ? dropTarget.portId : options.connectionDrag.fromPort;
+        const toPin = isDraggingFromOutput ? dropTarget.portId : options.connectionDrag.fromPin;
         canDrop = options.canDropConnection(
           fromNodeId,
-          fromPort,
+          fromPin,
           toNodeId,
-          toPort,
+          toPin,
         );
         hoveredPort.classList.add(canDrop ? "cfc-port--drop-allowed" : "cfc-port--drop-blocked");
       }

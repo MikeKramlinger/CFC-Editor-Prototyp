@@ -38,7 +38,7 @@ describe("CFC-ST format unit tests", () => {
 
     const connections = [
       // input -> output (input is a single-port source; should be serialized without .OUT)
-      createConnection("C1", "INP", "OUT", { fromPort: "output:0", toPort: "input:0" }),
+      createConnection("C1", "INP", "OUT", { fromPin: "output:0", toPin: "input:0" }),
     ];
 
     const graph = createGraph(nodes, connections);
@@ -76,7 +76,7 @@ In => Out
     expect(graph.nodes.some((n) => n.id === "INP")).toBe(true);
     expect(graph.nodes.some((n) => n.id === "OUT")).toBe(true);
     expect(graph.connections).toHaveLength(1);
-    expect(graph.connections[0]).toMatchObject({ fromNodeId: "INP", toNodeId: "OUT", fromPort: "output:0", toPort: "input:0" });
+    expect(graph.connections[0]).toMatchObject({ fromNodeId: "INP", toNodeId: "OUT", fromPin: "output:0", toPin: "input:0" });
   });
 
   it("uses explicit execution order metadata when parsing nodes", () => {

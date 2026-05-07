@@ -11,8 +11,8 @@ import type { CfcConnection, CfcNode } from "../../model.js";
 
 interface BeginConnectionDragOptions {
   fromNodeId: string;
-  fromPort: string;
-  fromPortKind: ConnectionPortKind;
+  fromPin: string;
+  fromPinKind: ConnectionPortKind;
   clientX: number;
   clientY: number;
   findNode: (nodeId: string) => CfcNode | undefined;
@@ -34,8 +34,8 @@ export const beginConnectionDrag = (options: BeginConnectionDragOptions): Connec
 
   return createConnectionDragState(
     options.fromNodeId,
-    options.fromPort,
-    options.fromPortKind,
+    options.fromPin,
+    options.fromPinKind,
     startX,
     startY,
     options.clientToGraphPxX(options.clientX),
@@ -86,7 +86,7 @@ export const finishConnectionDrag = (options: FinishConnectionDragOptions): void
   });
   const dropInputTarget = extractInputPortDropTarget(dropTarget);
   const dropOutputTarget = extractOutputPortDropTarget(dropTarget);
-  const expectedDropKind = options.state.fromPortKind === "output" ? "input" : "output";
+  const expectedDropKind = options.state.fromPinKind === "output" ? "input" : "output";
   const matchingDropTarget = expectedDropKind === "input" ? dropInputTarget : dropOutputTarget;
 
   if (!matchingDropTarget) {
@@ -94,29 +94,29 @@ export const finishConnectionDrag = (options: FinishConnectionDragOptions): void
   }
 
   const fromNodeId =
-    options.state.fromPortKind === "output" ? options.state.fromNodeId : matchingDropTarget.nodeId;
-  const fromPort = options.state.fromPortKind === "output" ? options.state.fromPort : matchingDropTarget.portId;
-  const toNodeId = options.state.fromPortKind === "output" ? matchingDropTarget.nodeId : options.state.fromNodeId;
-  const toPort = options.state.fromPortKind === "output" ? matchingDropTarget.portId : options.state.fromPort;
+    options.state.fromPinKind === "output" ? options.state.fromNodeId : matchingDropTarget.nodeId;
+  const fromPin = options.state.fromPinKind === "output" ? options.state.fromPin : matchingDropTarget.portId;
+  const toNodeId = options.state.fromPinKind === "output" ? matchingDropTarget.nodeId : options.state.fromNodeId;
+  const toPin = options.state.fromPinKind === "output" ? matchingDropTarget.portId : options.state.fromPin;
 
   const blockReason = getConnectionCreationBlockReason(options.graphConnections, {
     fromNodeId,
-    fromPort,
+    fromPin,
     toNodeId,
-    toPort,
+    toPin,
   });
 
   if (!blockReason) {
     const connection: CfcConnection = {
       id: options.getNextConnectionId(),
       fromNodeId,
-      fromPort,
+      fromPin,
       toNodeId,
-      toPort,
+      toPin,
     };
     options.onConnectionCreated(connection);
     options.onConnectionSelected(connection.id);
-    options.onStatus(`Verbindung erstellt: ${connection.fromNodeId}.${connection.fromPort} -> ${connection.toNodeId}.${connection.toPort}`);
+    options.onStatus(`Verbindung erstellt: ${connection.fromNodeId}.${connection.fromPin} -> ${connection.toNodeId}.${connection.toPin}`);
     return;
   }
 

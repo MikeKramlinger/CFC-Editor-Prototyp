@@ -72,9 +72,9 @@ export interface CfcNode {
 export interface CfcConnection {
   id: string;
   fromNodeId: string;
-  fromPort: string;
+  fromPin: string;
   toNodeId: string;
-  toPort: string;
+  toPin: string;
 }
 
 export interface CfcGraph {

@@ -204,9 +204,9 @@ export const parseConnectionEntry = (entry: unknown, index: number): CfcConnecti
   return {
     id: toStringValue(entry.id, `C${index + 1}`),
     fromNodeId: toStringValue(entry.fromNodeId, ""),
-    fromPort: normalizePort(entry.fromPort, "output"),
+    fromPin: normalizePort(entry.fromPin, "output"),
     toNodeId: toStringValue(entry.toNodeId, ""),
-    toPort: normalizePort(entry.toPort, "input"),
+    toPin: normalizePort(entry.toPin, "input"),
   };
 };
 
@@ -322,9 +322,11 @@ export const toExecutionOrderedSerializableGraph = (
       };
     }),
     connections: graph.connections.map((connection) => ({
-      ...connection,
-      fromPort: serializePort(connection.fromPort, "output", nodeTypeById.get(connection.fromNodeId)),
-      toPort: serializePort(connection.toPort, "input", nodeTypeById.get(connection.toNodeId)),
+      id: connection.id,
+      fromNodeId: connection.fromNodeId,
+      fromPin: serializePort(connection.fromPin, "output", nodeTypeById.get(connection.fromNodeId)),
+      toNodeId: connection.toNodeId,
+      toPin: serializePort(connection.toPin, "input", nodeTypeById.get(connection.toNodeId)),
     })),
   };
 };

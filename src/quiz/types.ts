@@ -16,8 +16,8 @@ export interface QuizNodeExpectation extends QuizNodeSelector {
 export interface QuizConnectionExpectation {
   from: QuizNodeSelector;
   to: QuizNodeSelector;
-  fromPort?: string;
-  toPort?: string;
+  fromPin?: string;
+  toPin?: string;
 }
 
 export interface QuizTaskCriteria {

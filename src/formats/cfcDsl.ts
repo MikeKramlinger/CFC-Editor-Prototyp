@@ -537,9 +537,9 @@ const parseDslGraph = (raw: string): CfcGraph => {
     return {
       id: draft.id ?? `C${index + 1}`,
       fromNodeId: from.nodeId,
-      fromPort: from.port,
+      fromPin: from.port,
       toNodeId: to.nodeId,
-      toPort: to.port,
+      toPin: to.port,
     };
   });
 
@@ -583,13 +583,13 @@ export const cfcDslFormat: CfcFormatAdapter = {
       payload.connections.forEach((connection) => {
         const from = toConnectionEndpointSyntax(
           connection.fromNodeId,
-          connection.fromPort,
+          connection.fromPin,
           "output",
           nodeTypeById,
         );
         const to = toConnectionEndpointSyntax(
           connection.toNodeId,
-          connection.toPort,
+          connection.toPin,
           "input",
           nodeTypeById,
         );

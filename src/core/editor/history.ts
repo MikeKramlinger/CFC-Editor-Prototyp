@@ -19,9 +19,9 @@ const areConnectionsEqual = (
   return (
     left.id === right.id &&
     left.fromNodeId === right.fromNodeId &&
-    left.fromPort === right.fromPort &&
+    left.fromPin === right.fromPin &&
     left.toNodeId === right.toNodeId &&
-    left.toPort === right.toPort
+    left.toPin === right.toPin
   );
 };
 

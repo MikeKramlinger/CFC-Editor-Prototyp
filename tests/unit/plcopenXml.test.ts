@@ -37,7 +37,7 @@ describe("PLCopenXML format", () => {
           createNode("N1", "input", 0, 0, { label: "Input 1" }),
           createNode("N2", "output", 10, 0, { label: "Output 1" }),
         ],
-        [createConnection("C1", "N1", "N2", { fromPort: "output:0", toPort: "input:0" })],
+        [createConnection("C1", "N1", "N2", { fromPin: "output:0", toPin: "input:0" })],
       );
 
       const xml = plcopenXmlFormat.serialize(graph);
@@ -150,7 +150,7 @@ describe("PLCopenXML format", () => {
           createNode("N1", "input", 0, 0, { label: "In" }),
           createNode("N2", "output", 10, 0, { label: "Out" }),
         ],
-        [createConnection("C1", "N1", "N2", { fromPort: "output:0", toPort: "input:0" })],
+        [createConnection("C1", "N1", "N2", { fromPin: "output:0", toPin: "input:0" })],
       );
 
       const xml = plcopenXmlFormat.serialize(graph);
@@ -173,7 +173,7 @@ describe("PLCopenXML format", () => {
           createNode("N1", "input", 0, 0, { label: "In" }),
           createNode("N2", "output", 10, 0, { label: "Out" }),
         ],
-        [createConnection("C1", "N1", "N2", { fromPort: "output:0", toPort: "input:0" })],
+        [createConnection("C1", "N1", "N2", { fromPin: "output:0", toPin: "input:0" })],
       );
 
       const xml = plcopenXmlFormat.serialize(graph);

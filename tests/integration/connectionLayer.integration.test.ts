@@ -37,8 +37,8 @@ describe("connection layer integration", () => {
       routingMode: "astar",
       connectionDrag: {
         fromNodeId: "N1",
-        fromPort: "output:0",
-        fromPortKind: "output",
+        fromPin: "output:0",
+        fromPinKind: "output",
         startX: 0,
         startY: 0,
         currentX: 20,
@@ -79,8 +79,8 @@ describe("connection layer integration", () => {
       routingMode: "astar",
       connectionDrag: {
         fromNodeId: "N1",
-        fromPort: "input:1",
-        fromPortKind: "input",
+        fromPin: "input:1",
+        fromPinKind: "input",
         startX: 0,
         startY: 0,
         currentX: 20,

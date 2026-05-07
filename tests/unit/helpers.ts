@@ -68,9 +68,9 @@ export const createConnection = (
 ): CfcConnection => ({
   id,
   fromNodeId,
-  fromPort: "OUT1",
+  fromPin: "OUT1",
   toNodeId,
-  toPort: "IN1",
+  toPin: "IN1",
   ...overrides,
 });
 

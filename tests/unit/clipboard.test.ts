@@ -30,7 +30,7 @@ describe("clipboard core", () => {
     expect(clipboard).not.toBeNull();
     expect(clipboard?.nodes.map((node) => node.id)).toEqual(["N1", "N2"]);
     expect(clipboard?.connections).toEqual([
-      { fromNodeId: "N1", fromPort: "OUT1", toNodeId: "N2", toPort: "IN1" },
+      { fromNodeId: "N1", fromPin: "OUT1", toNodeId: "N2", toPin: "IN1" },
     ]);
     expect(clipboard?.pasteCount).toBe(0);
   });

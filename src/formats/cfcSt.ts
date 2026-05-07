@@ -264,9 +264,9 @@ class CfcSTParser {
 
       pushConnection({
         fromNodeId: source.nodeId,
-        fromPort: source.port,
+        fromPin: source.port,
         toNodeId: target.nodeId,
-        toPort: target.port,
+        toPin: target.port,
       });
     });
 
@@ -379,15 +379,15 @@ export const cfcStFormat: CfcFormatAdapter = {
       const toNode = nodeById.get(conn.toNodeId);
 
       if (conn.fromNodeId === "__CONST__" || conn.fromNodeId === "__VAR__") {
-        const targetText = toNode ? formatEndpoint(conn.toNodeId, conn.toPort, "input") : `${conn.toNodeId}.${conn.toPort}`;
-        result += `${conn.fromPort} => ${targetText}\n`;
+        const targetText = toNode ? formatEndpoint(conn.toNodeId, conn.toPin, "input") : `${conn.toNodeId}.${conn.toPin}`;
+        result += `${conn.fromPin} => ${targetText}\n`;
       } else if (fromNode?.type === "input") {
-        const sourceText = formatEndpoint(conn.fromNodeId, conn.fromPort, "output");
-        const targetText = toNode ? formatEndpoint(conn.toNodeId, conn.toPort, "input") : `${conn.toNodeId}.${conn.toPort}`;
+        const sourceText = formatEndpoint(conn.fromNodeId, conn.fromPin, "output");
+        const targetText = toNode ? formatEndpoint(conn.toNodeId, conn.toPin, "input") : `${conn.toNodeId}.${conn.toPin}`;
         result += `${sourceText} => ${targetText}\n`;
       } else {
-        const sourceText = fromNode ? formatEndpoint(conn.fromNodeId, conn.fromPort, "output") : `${conn.fromNodeId}.${conn.fromPort}`;
-        const targetText = toNode ? formatEndpoint(conn.toNodeId, conn.toPort, "input") : `${conn.toNodeId}.${conn.toPort}`;
+        const sourceText = fromNode ? formatEndpoint(conn.fromNodeId, conn.fromPin, "output") : `${conn.fromNodeId}.${conn.fromPin}`;
+        const targetText = toNode ? formatEndpoint(conn.toNodeId, conn.toPin, "input") : `${conn.toNodeId}.${conn.toPin}`;
         result += `${sourceText} -> ${targetText}\n`;
       }
     });

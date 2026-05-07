@@ -52,9 +52,9 @@ const expectedTaskConnectInputBoxGraph: CfcGraph = {
     {
       id: "C1",
       fromNodeId: "N1",
-      fromPort: "output:0",
+      fromPin: "output:0",
       toNodeId: "N3",
-      toPort: "input:0",
+      toPin: "input:0",
     },
   ],
   declarations: "PROGRAM CFC\n  In : INT;\n  Out : INT;\n  Step : FB;\nVAR\nEND_VAR",

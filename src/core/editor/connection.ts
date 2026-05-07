@@ -2,8 +2,8 @@ export type ConnectionPortKind = "input" | "output";
 
 export interface ConnectionDragState {
   fromNodeId: string;
-  fromPort: string;
-  fromPortKind: ConnectionPortKind;
+  fromPin: string;
+  fromPinKind: ConnectionPortKind;
   startX: number;
   startY: number;
   currentX: number;
@@ -19,8 +19,8 @@ export interface ConnectionDropTarget {
 
 export const createConnectionDragState = (
   fromNodeId: string,
-  fromPort: string,
-  fromPortKind: ConnectionPortKind,
+  fromPin: string,
+  fromPinKind: ConnectionPortKind,
   startX: number,
   startY: number,
   currentX: number,
@@ -30,8 +30,8 @@ export const createConnectionDragState = (
 ): ConnectionDragState => {
   return {
     fromNodeId,
-    fromPort,
-    fromPortKind,
+    fromPin,
+    fromPinKind,
     startX,
     startY,
     currentX,

@@ -7,7 +7,7 @@ describe("history core", () => {
   it("detects equal graphs correctly", () => {
     const graph = createGraph(
       [createNode("N1", "box", 1, 1)],
-      [createConnection("C1", "N1", "N1", { toPort: "IN2" })],
+      [createConnection("C1", "N1", "N1", { toPin: "IN2" })],
     );
 
     expect(areGraphsEqual(graph, cloneGraph(graph))).toBe(true);

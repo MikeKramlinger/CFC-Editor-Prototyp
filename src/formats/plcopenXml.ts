@@ -981,7 +981,7 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
       
       // Get the correct output name based on the source port
       const sourceOutputNames = outputNamesByNodeId.get(connection.fromNodeId) ?? [];
-      const sourceIndex = parsePortIndex(connection.fromPort, "output");
+      const sourceIndex = parsePortIndex(connection.fromPin, "output");
       // For input/output nodes, use the label (which is stored as [label] in outputNamesByNodeId)
       // For other nodes, use the actual output port name
       const formal = sourceOutputNames[sourceIndex] ?? sourceOutputNames[0];
@@ -999,7 +999,7 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
       }
 
       // Link target to connector
-      const targetIndex = parsePortIndex(connection.toPort, "input");
+      const targetIndex = parsePortIndex(connection.toPin, "input");
       const targetPoint = targetSlots[targetIndex] ?? targetSlots[0] ?? null;
       if (targetPoint) {
         const connectionElement = doc.createElementNS(NAMESPACE, "connection");
@@ -1101,9 +1101,9 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
         graph.connections.push({
           id: `C${connectionSerial}`,
           fromNodeId: sourceNode.node.id,
-          fromPort: `output:${outputIndex}`,
+          fromPin: `output:${outputIndex}`,
           toNodeId: targetNode.node.id,
-          toPort: `input:${inputIndex}`,
+          toPin: `input:${inputIndex}`,
         });
         connectionSerial += 1;
       });

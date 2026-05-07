@@ -2,7 +2,7 @@ import type { CfcGraph, CfcNode } from "../../model.js";
 
 export interface GraphClipboard {
   nodes: CfcNode[];
-  connections: Array<Pick<CfcGraph["connections"][number], "fromNodeId" | "fromPort" | "toNodeId" | "toPort">>;
+  connections: Array<Pick<CfcGraph["connections"][number], "fromNodeId" | "fromPin" | "toNodeId" | "toPin">>;
   pasteCount: number;
 }
 
@@ -34,9 +34,9 @@ export const createGraphClipboard = (graph: CfcGraph, selectedNodeIds: Set<strin
     .filter((connection) => selectedIds.has(connection.fromNodeId) && selectedIds.has(connection.toNodeId))
     .map((connection) => ({
       fromNodeId: connection.fromNodeId,
-      fromPort: connection.fromPort,
+      fromPin: connection.fromPin,
       toNodeId: connection.toNodeId,
-      toPort: connection.toPort,
+      toPin: connection.toPin,
     }));
 
   return {

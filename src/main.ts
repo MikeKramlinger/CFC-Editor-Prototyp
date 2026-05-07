@@ -1046,14 +1046,14 @@ const createBoxesAndConnections = (
   if (newNodes.length >= 2) {
     const toConnectionKey = (
       fromNodeId: string,
-      fromPort: string,
+      fromPin: string,
       toNodeId: string,
-      toPort: string,
-    ): string => `${fromNodeId}|${fromPort}|${toNodeId}|${toPort}`;
+      toPin: string,
+    ): string => `${fromNodeId}|${fromPin}|${toNodeId}|${toPin}`;
 
     const existingConnectionKeys = new Set(
       nextGraph.connections.map((connection) =>
-        toConnectionKey(connection.fromNodeId, connection.fromPort, connection.toNodeId, connection.toPort)
+        toConnectionKey(connection.fromNodeId, connection.fromPin, connection.toNodeId, connection.toPin)
       ),
     );
 
@@ -1072,8 +1072,8 @@ const createBoxesAndConnections = (
       }));
     });
 
-    const connect = (fromNodeId: string, fromPort: string, toNodeId: string, toPort: string): void => {
-      const key = toConnectionKey(fromNodeId, fromPort, toNodeId, toPort);
+    const connect = (fromNodeId: string, fromPin: string, toNodeId: string, toPin: string): void => {
+      const key = toConnectionKey(fromNodeId, fromPin, toNodeId, toPin);
       if (existingConnectionKeys.has(key)) {
         return;
       }
@@ -1083,9 +1083,9 @@ const createBoxesAndConnections = (
           nextGraph.connections.map((existingConnection) => existingConnection.id),
         )}`,
         fromNodeId,
-        fromPort,
+        fromPin,
         toNodeId,
-        toPort,
+        toPin,
       };
       nextGraph.connections.push(connection);
       existingConnectionKeys.add(key);
@@ -1122,7 +1122,7 @@ const createBoxesAndConnections = (
         connect(outputPort.nodeId, outputPort.port, selectedInput.nodeId, selectedInput.port);
       }
     } else if (connectionCount > 0) {
-      const connectionTargets: Array<{ fromNodeId: string; fromPort: string; toNodeId: string; toPort: string }> = [];
+      const connectionTargets: Array<{ fromNodeId: string; fromPin: string; toNodeId: string; toPin: string }> = [];
       for (const outputPort of outputPorts) {
         for (const inputPort of inputPorts) {
           if (outputPort.nodeId === inputPort.nodeId) {
@@ -1130,9 +1130,9 @@ const createBoxesAndConnections = (
           }
           connectionTargets.push({
             fromNodeId: outputPort.nodeId,
-            fromPort: outputPort.port,
+            fromPin: outputPort.port,
             toNodeId: inputPort.nodeId,
-            toPort: inputPort.port,
+            toPin: inputPort.port,
           });
         }
       }
@@ -1142,7 +1142,7 @@ const createBoxesAndConnections = (
         if (!target) {
           continue;
         }
-        connect(target.fromNodeId, target.fromPort, target.toNodeId, target.toPort);
+        connect(target.fromNodeId, target.fromPin, target.toNodeId, target.toPin);
       }
     }
   }

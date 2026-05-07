@@ -91,13 +91,13 @@ export const xmlFormat: CfcFormatAdapter = {
       const connectionElement = documentRoot.createElement("connection");
       connectionElement.setAttribute("id", connection.id);
       connectionElement.setAttribute("from", connection.fromNodeId);
-      connectionElement.setAttribute("fromPort", serializePort(connection.fromPort, "output", nodeTypeById.get(connection.fromNodeId)));
+      connectionElement.setAttribute("fromPin", serializePort(connection.fromPin, "output", nodeTypeById.get(connection.fromNodeId)));
       connectionElement.setAttribute("to", connection.toNodeId);
-      connectionElement.setAttribute("toPort", serializePort(connection.toPort, "input", nodeTypeById.get(connection.toNodeId)));
+      connectionElement.setAttribute("toPin", serializePort(connection.toPin, "input", nodeTypeById.get(connection.toNodeId)));
       connections.append(connectionElement);
     });
 
-    root.append(nodes, connections);
+      root.append(nodes, connections);
 
     const serialized = new XMLSerializer().serializeToString(documentRoot).replace(/^<\?xml[^>]*>\s*/i, "");
     return `<?xml version="1.0" encoding="UTF-8"?>\n${formatXml(serialized)}`;
@@ -154,20 +154,20 @@ export const xmlFormat: CfcFormatAdapter = {
 
     const connectionElements = cfc.getElementsByTagNameNS("*", "connection");
     const connectionsRaw = Array.from(connectionElements).map((connectionElement) => {
-      const rawFromPort = connectionElement.getAttribute("fromPort") ?? "output:0";
-      const rawToPort = connectionElement.getAttribute("toPort") ?? "input:0";
+      const rawFromPin = connectionElement.getAttribute("fromPin") ?? "output:0";
+      const rawToPin = connectionElement.getAttribute("toPin") ?? "input:0";
       return {
         id: requireAttr(connectionElement, "id"),
         fromNodeId: requireAttr(connectionElement, "from"),
-        fromPort: rawFromPort === "output" ? "output:0" : rawFromPort,
+        fromPin: rawFromPin === "output" ? "output:0" : rawFromPin,
         toNodeId: requireAttr(connectionElement, "to"),
-        toPort: rawToPort === "input" ? "input:0" : rawToPort,
+        toPin: rawToPin === "input" ? "input:0" : rawToPin,
       };
     });
 
     const nodeIds = new Set(graph.nodes.map((node) => node.id));
     graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
-    graph.declarations = deriveDeclarationsFromNodes(graph.nodes);
+      graph.declarations = deriveDeclarationsFromNodes(graph.nodes);
 
     return graph;
   },

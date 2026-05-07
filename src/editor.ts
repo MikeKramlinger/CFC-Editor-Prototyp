@@ -672,9 +672,9 @@ export class CfcEditor {
 
       const blockReason = getConnectionCreationBlockReason(this.graph.connections, {
         fromNodeId,
-        fromPort: sourceConnection.fromPort,
+        fromPin: sourceConnection.fromPin,
         toNodeId,
-        toPort: sourceConnection.toPort,
+        toPin: sourceConnection.toPin,
       });
       if (blockReason) {
         continue;
@@ -686,9 +686,9 @@ export class CfcEditor {
           this.graph.connections.map((connection) => connection.id),
         )}`,
         fromNodeId,
-        fromPort: sourceConnection.fromPort,
+        fromPin: sourceConnection.fromPin,
         toNodeId,
-        toPort: sourceConnection.toPort,
+        toPin: sourceConnection.toPin,
       });
     }
 
@@ -1042,13 +1042,13 @@ export class CfcEditor {
       getInputPortPoint: this.getInputPortPoint.bind(this),
       unitToPx: this.unitToPx.bind(this),
       createAStarConnectionPath: this.createAStarConnectionPath.bind(this),
-      canDropConnection: (fromNodeId, fromPort, toNodeId, toPort) => {
+      canDropConnection: (fromNodeId, fromPin, toNodeId, toPin) => {
         return (
           getConnectionCreationBlockReason(this.graph.connections, {
             fromNodeId,
-            fromPort,
+            fromPin,
             toNodeId,
-            toPort,
+            toPin,
           }) === null
         );
       },
@@ -1142,8 +1142,8 @@ export class CfcEditor {
   private createAStarConnectionPath(
     fromNode: CfcNode,
     toNode: CfcNode,
-    fromPortId = "output:0",
-    toPortId = "input:0",
+    fromPinId = "output:0",
+    toPinId = "input:0",
     connectionId = "",
   ): SVGPathElement {
     const toRoutingObstacleNode = (node: CfcNode): CfcNode & { x: number; y: number; width: number; height: number } => {
@@ -1165,15 +1165,15 @@ export class CfcEditor {
       };
     };
 
-    const startPort = this.getOutputPortPoint(fromNode, fromPortId);
-    const endPort = this.getInputPortPoint(toNode, toPortId);
-    const start = { x: Math.ceil(startPort.x), y: this.getAStarPortY(fromNode, fromPortId, "output") };
-    const end = { x: endPort.x, y: this.getAStarPortY(toNode, toPortId, "input") };
+    const startPort = this.getOutputPortPoint(fromNode, fromPinId);
+    const endPort = this.getInputPortPoint(toNode, toPinId);
+    const start = { x: Math.ceil(startPort.x), y: this.getAStarPortY(fromNode, fromPinId, "output") };
+    const end = { x: endPort.x, y: this.getAStarPortY(toNode, toPinId, "input") };
     const startRight = { x: start.x + 1, y: start.y };
     const endRouteX = Math.ceil(end.x);
     const endLeft = { x: endRouteX - 1, y: end.y };
 
-    const cacheKey = connectionId || `${fromNode.id}|${fromPortId}|${toNode.id}|${toPortId}`;
+    const cacheKey = connectionId || `${fromNode.id}|${fromPinId}|${toNode.id}|${toPinId}`;
     const cached = this.astarRouteCache.get(cacheKey);
     const routingObstacles = this.graph.nodes.map(toRoutingObstacleNode);
     let routePoints: GridPoint[] | null;
@@ -1216,8 +1216,8 @@ export class CfcEditor {
 
   private startConnectionDrag(
     fromNodeId: string,
-    fromPort: string,
-    fromPortKind: ConnectionPortKind,
+    fromPin: string,
+    fromPinKind: ConnectionPortKind,
     clientX: number,
     clientY: number,
   ): void {
@@ -1226,8 +1226,8 @@ export class CfcEditor {
     }
     this.connectionDrag = beginConnectionDrag({
       fromNodeId,
-      fromPort,
-      fromPortKind,
+      fromPin,
+      fromPinKind,
       clientX,
       clientY,
       findNode: this.findNode.bind(this),
