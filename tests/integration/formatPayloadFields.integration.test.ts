@@ -152,21 +152,26 @@ describe("format payload fields integration", () => {
     expect(raw).toMatchInlineSnapshot(`
       "cfc LR
 
-        N1[/ In /] {o: 0, x: 1, y: 2}
-        N2[\\ Out \\] {o: 1, x: 22, y: 2}
-        N3[Box1_0] {o: 2, x: 8, y: 2}
-        N4[+BoxwithENENO1_0] {o: 3, x: 15, y: 2}
+        N1[/In/] {x: 1, y: 2}
+        N2[\\Out\\] {o: 1, x: 22, y: 2}
+        N3[Box1_0 @ Box1] {o: 2, x: 8, y: 2}
+        N4[+BoxwithENENO1_0 @ BoxwithENENO1] {o: 3, x: 15, y: 2}
         N5(Jump1) {o: 4, x: 22, y: 7}
-        N6{{ Label1 }} {o: 5, x: 1, y: 7}
-        N7(( RETURN )) {o: 6, x: 22, y: 12}
+        N6{{Label1}} {o: 5, x: 1, y: 7}
+        N7((RETURN)) {o: 6, x: 22, y: 12}
         N8[[C: Composer1]] {o: 7, x: 8, y: 7}
-        N9[[S: Selector1]] {o: 0, x: 15, y: 7}
-        N10>CM-Source-1] {o: 0, x: 22, y: 17}
-        N11[CM-Sink-1< {o: 0, x: 1, y: 12}
-        N12[* Doc *] {o: 0, x: 1, y: 18}
+        N9[[S: Selector1]] {x: 15, y: 7}
+        N10>CM-Source-1] {x: 22, y: 17}
+        N11[CM-Sink-1< {x: 1, y: 12}
+        N12[*Doc*] {x: 1, y: 18}
 
         N1 --> N3.IN1
         N3.OUT --> N2
+
+      %% DECLARATIONS
+      PROGRAM CFC
+      VAR
+      END_VAR
       "
     `);
   });

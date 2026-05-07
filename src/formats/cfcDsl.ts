@@ -24,6 +24,7 @@ interface ParsedNodeDraft {
   id: string;
   type: CfcNodeType;
   label: string;
+  typeName?: string;
   metadata: NodeMetadata;
   lineNumber: number;
 }
@@ -90,15 +91,32 @@ const parseMetadata = (raw: string, lineNumber: number): NodeMetadata => {
     throw new Error(`Unbekannter Metadaten-Schlüssel in Zeile ${lineNumber}: "${key}"`);
   }
 
-  if (typeof meta.o !== "number" || typeof meta.x !== "number" || typeof meta.y !== "number") {
-    throw new Error(`Metadaten in Zeile ${lineNumber} muessen o, x und y enthalten.`);
+  // x and y are required; o is optional and defaults to 0
+  if (typeof meta.x !== "number" || typeof meta.y !== "number") {
+    throw new Error(`Metadaten in Zeile ${lineNumber} muessen x und y enthalten.`);
   }
 
   return {
-    o: meta.o,
+    o: typeof meta.o === "number" ? meta.o : 0,
     x: meta.x,
     y: meta.y,
   };
+};
+
+const parseBoxContent = (content: string): [label: string, typeName?: string] => {
+  const atIndex = content.lastIndexOf("@");
+  if (atIndex === -1) {
+    return [content];
+  }
+
+  const label = content.slice(0, atIndex).trim();
+  const typeName = content.slice(atIndex + 1).trim();
+
+  if (label.length === 0 || typeName.length === 0) {
+    return [content];
+  }
+
+  return [label, typeName];
 };
 
 const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, "id" | "metadata" | "lineNumber"> => {
@@ -124,7 +142,9 @@ const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, 
 
   match = body.match(/^\[\+([^\]]+)\]$/);
   if (match) {
-    return { type: "box-en-eno", label: (match[1] ?? "").trim() };
+    const content = (match[1] ?? "").trim();
+    const [label, typeName] = parseBoxContent(content);
+    return { type: "box-en-eno", label, typeName };
   }
 
   match = body.match(/^\{\{\s*([\s\S]*?)\s*\}\}$/);
@@ -179,7 +199,9 @@ const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, 
 
   match = body.match(/^\[([^\]]+)\]$/);
   if (match) {
-    return { type: "box", label: (match[1] ?? "").trim() };
+    const content = (match[1] ?? "").trim();
+    const [label, typeName] = parseBoxContent(content);
+    return { type: "box", label, typeName };
   }
 
   throw new Error(`Unbekannte Node-Syntax in Zeile ${lineNumber}: "${body}"`);
@@ -209,6 +231,7 @@ const parseNodeLine = (line: string, lineNumber: number): ParsedNodeDraft => {
     id,
     type: parsedBody.type,
     label: parsedBody.label,
+    typeName: parsedBody.typeName,
     metadata,
     lineNumber,
   };
@@ -356,44 +379,60 @@ const toPinName = (index: number, kind: "input" | "output", nodeType: CfcNodeTyp
 };
 
 const toNodeSyntax = (node: CfcNode): string => {
+  const typeNameSuffix = node.typeName && node.typeName.trim().length > 0 ? ` @ ${node.typeName}` : "";
+
   switch (node.type) {
     case "input":
-      return `${node.id}[/ ${quoteIfNeeded(node.label, ["/]"])} /]`;
+      return `${node.id}[/${quoteIfNeeded(node.label, ["/]"])}/]`;
     case "output":
-      return `${node.id}[\\ ${quoteIfNeeded(node.label, ["\\]"])} \\]`;
+      return `${node.id}[\\${quoteIfNeeded(node.label, ["\\]"])}\\]`;
     case "box":
-      return `${node.id}[${node.label}]`;
+      return `${node.id}[${node.label}${typeNameSuffix}]`;
     case "box-en-eno":
-      return `${node.id}[+${node.label}]`;
+      return `${node.id}[+${node.label}${typeNameSuffix}]`;
     case "jump":
       return `${node.id}(${quoteIfNeeded(node.label, [")"])})`;
     case "label":
-      return `${node.id}{{ ${quoteIfNeeded(node.label, ["}}", "}"])} }}`;
+      return `${node.id}{{${quoteIfNeeded(node.label, ["}}", "}"])}}}`;
     case "return":
-      return `${node.id}(( RETURN ))`;
+      return `${node.id}((RETURN))`;
     case "composer":
       return `${node.id}[[C: ${node.label}]]`;
     case "selector":
       return `${node.id}[[S: ${node.label}]]`;
     case "comment":
-      return `${node.id}[* ${quoteIfNeeded(node.label, ["*]"])} *]`;
+      return `${node.id}[*${quoteIfNeeded(node.label, ["*]"])}*]`;
     case "connection-mark-source":
       return `${node.id}>${quoteIfNeeded(node.label, ["]"])}]`;
     case "connection-mark-sink":
       return `${node.id}[${quoteIfNeeded(node.label, ["<"])}<`;
     case "input-pin":
     case "output-pin":
-      return `${node.id}[[T: ${node.type} | ${quoteIfNeeded(node.label, ["]]"])}]]`;
+      return `${node.id}[[T:${node.type}|${quoteIfNeeded(node.label, ["]]"])}]]`;
     default:
-      return `${node.id}[[T: ${node.type} | ${quoteIfNeeded(node.label, ["]]"])}]]`;
+      return `${node.id}[[T:${node.type}|${quoteIfNeeded(node.label, ["]]"])}]]`;
   }
 };
 
 const toMetadataSyntax = (entry: Record<string, unknown>): string => {
-  const executionOrder = typeof entry.executionOrder === "number" ? Math.max(1, Math.floor(entry.executionOrder)) : 0;
+  const parts: string[] = [];
   const x = typeof entry.x === "number" ? entry.x : 0;
   const y = typeof entry.y === "number" ? entry.y : 0;
-  return `{o: ${executionOrder}, x: ${x}, y: ${y}}`;
+
+  // executionOrder might be present as `executionOrder` or legacy `o` key.
+  const oValue = typeof entry.executionOrder === "number"
+    ? entry.executionOrder
+    : (typeof entry.o === "number" ? entry.o : undefined);
+
+  if (typeof oValue === "number" && oValue > 0) {
+    const executionOrder = Math.max(1, Math.floor(oValue));
+    parts.push(`o: ${executionOrder}`);
+  }
+
+  parts.push(`x: ${x}`);
+  parts.push(`y: ${y}`);
+
+  return `{${parts.join(", ")}}`;
 };
 
 const toConnectionEndpointSyntax = (
@@ -422,8 +461,25 @@ const parseDslGraph = (raw: string): CfcGraph => {
   const connectionDrafts: ParsedConnectionDraft[] = [];
 
   let headerFound = false;
+  let declarationsStartIndex = -1;
 
-  lines.forEach((line, index) => {
+  // Suche nach dem Deklarationsmarker
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === undefined) {
+      continue;
+    }
+    const trimmed = line.trim();
+    if (trimmed === "%% DECLARATIONS") {
+      declarationsStartIndex = i + 1;
+      break;
+    }
+  }
+
+  // Verarbeite nur Zeilen vor den Deklarationen
+  const contentLines = declarationsStartIndex >= 0 ? lines.slice(0, declarationsStartIndex - 1) : lines;
+
+  contentLines.forEach((line, index) => {
     const lineNumber = index + 1;
     const trimmed = line.trim().replace(/;$/, "").trim();
     if (trimmed.length === 0 || trimmed.startsWith("%%") || trimmed.startsWith("#")) {
@@ -463,6 +519,10 @@ const parseDslGraph = (raw: string): CfcGraph => {
       entry.executionOrder = Math.floor(draft.metadata.o);
     }
 
+    if (draft.typeName) {
+      entry.typeName = draft.typeName;
+    }
+
     return entry;
   });
 
@@ -484,6 +544,16 @@ const parseDslGraph = (raw: string): CfcGraph => {
   });
 
   graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
+
+  // Extrahiere Deklarationen, wenn sie vorhanden sind
+  if (declarationsStartIndex >= 0 && declarationsStartIndex < lines.length) {
+    const declarationsLines = lines.slice(declarationsStartIndex);
+    const declarations = declarationsLines.join("\n").trim();
+    if (declarations.length > 0) {
+      graph.declarations = declarations;
+    }
+  }
+
   return graph;
 };
 
@@ -527,12 +597,18 @@ export const cfcDslFormat: CfcFormatAdapter = {
       });
     }
 
+    // Füge Deklarationen am Ende hinzu, wenn nicht leer
+    if (graph.declarations && graph.declarations.trim().length > 0) {
+      lines.push("");
+      lines.push("%% DECLARATIONS");
+      lines.push(graph.declarations);
+    }
+
     return `${lines.join("\n")}\n`;
   },
   deserialize(raw: string): CfcGraph {
     try {
       const graph = parseDslGraph(raw);
-      // DSL-Format speichert Deklarationen nicht, daher verwenden wir die Standardwerte
       return graph;
     } catch (error) {
       if (error instanceof Error) {
