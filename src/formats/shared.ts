@@ -100,6 +100,73 @@ export const getExportLabelFieldName = (type: CfcNodeType): string => {
   }
 };
 
+export interface RequiredNodeAttributeSpec {
+  field: string;
+  candidates: string[];
+}
+
+export const getCommonRequiredNodeAttributeSpecs = (): RequiredNodeAttributeSpec[] => ([
+  { field: "id", candidates: ["id"] },
+  { field: "type", candidates: ["type"] },
+  { field: "x", candidates: ["x"] },
+  { field: "y", candidates: ["y"] },
+]);
+
+export const getRequiredNodeAttributeSpecs = (type: CfcNodeType): RequiredNodeAttributeSpec[] => {
+  const specs: RequiredNodeAttributeSpec[] = [];
+
+  switch (type) {
+    case "input":
+      specs.push({ field: "expression", candidates: ["expression"] });
+      break;
+    case "output":
+      specs.push(
+        { field: "executionOrder", candidates: ["executionOrder"] },
+        { field: "expression", candidates: ["expression"] },
+      );
+      break;
+    case "box":
+    case "box-en-eno":
+      specs.push(
+        { field: "executionOrder", candidates: ["executionOrder"] },
+        { field: "typeName", candidates: ["typeName"] },
+        { field: "instanceName", candidates: ["instanceName"] },
+      );
+      break;
+    case "jump":
+    case "label":
+      specs.push(
+        { field: "executionOrder", candidates: ["executionOrder"] },
+        { field: "label", candidates: ["label"] },
+      );
+      break;
+    case "return":
+      specs.push({ field: "executionOrder", candidates: ["executionOrder"] });
+      break;
+    case "composer":
+      specs.push(
+        { field: "executionOrder", candidates: ["executionOrder"] },
+        { field: "text", candidates: ["text"] },
+      );
+      break;
+    case "selector":
+      specs.push({ field: "text", candidates: ["text"] });
+      break;
+    case "comment":
+      specs.push({ field: "content", candidates: ["content"] });
+      break;
+    case "connection-mark-source":
+    case "connection-mark-sink":
+      specs.push({ field: "signal", candidates: ["signal"] });
+      break;
+    default:
+      specs.push({ field: "label", candidates: ["label"] });
+      break;
+  }
+
+  return specs;
+};
+
 export const getImportLabelValue = (record: Record<string, unknown>, type: CfcNodeType): string => {
   const fld = getExportLabelFieldName(type);
   const isBoxNode = type === "box" || type === "box-en-eno";
@@ -134,6 +201,12 @@ export const getExportLabelEntry = (node: CfcNode): Record<string, string> => {
   if (node.type === "return") {
     return {};
   }
+  // If the node was imported and the original export label field was missing,
+  // preserve that omission during serialization by not emitting the field.
+  const hadExportField = node.__metadata?.hadExportLabelField;
+  if (hadExportField === false) {
+    return {};
+  }
   const field = getExportLabelFieldName(node.type);
   return { [field]: node.label };
 };
@@ -143,6 +216,14 @@ export interface ParsedNodeEntry {
   executionOrder: number;
   hasExplicitExecutionOrder: boolean;
   sourceIndex: number;
+  lineNumber?: number;
+}
+
+export interface OrderedNodeValidationError {
+  line: number;
+  messageKey: string;
+  message?: string;
+  lines?: number[];
 }
 
 export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry | null => {
@@ -154,25 +235,59 @@ export const parseNodeEntry = (entry: unknown, index: number): ParsedNodeEntry |
   if (typeof entry.type === "string" && entry.type.length > 0) {
     if (!isCfcNodeType(entry.type)) {
       const nodeId = toStringValue(entry.id, `N${index + 1}`);
-      throw new Error(`Ungültige Nodes: ungültiger type "${entry.type}" bei Node "${nodeId}".`);
+      const error = new Error(`Unbekannter Knotentyp "${entry.type}" (Node "${nodeId}").`);
+      (error as Error & { messageKey?: string }).messageKey = "formatErrorUnknownNodeType";
+      throw error;
     }
     type = entry.type;
   }
   const template = getNodeTemplateByType(type);
   const isBoxNode = type === "box" || type === "box-en-eno";
   const hasExplicitExecutionOrder = Object.prototype.hasOwnProperty.call(entry, "executionOrder");
-  const executionOrder = Math.max(1, Math.floor(toFiniteNumber(entry.executionOrder, index + 1)));
+  const executionOrderValue = Number(entry.executionOrder);
+  if (hasExplicitExecutionOrder && (!Number.isFinite(executionOrderValue) || !Number.isInteger(executionOrderValue) || executionOrderValue < 1)) {
+    const nodeId = toStringValue(entry.id, `N${index + 1}`);
+    const error = new Error(`Ungültige executionOrder "${String(entry.executionOrder)}" (Node "${nodeId}").`);
+    (error as Error & { messageKey?: string }).messageKey = "formatErrorInvalidExecutionOrder";
+    throw error;
+  }
+  const executionOrder = hasExplicitExecutionOrder ? executionOrderValue : index + 1;
+  const x = Number(entry.x);
+  const y = Number(entry.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0) {
+    const issues: string[] = [];
+    if (entry.x === undefined || entry.x === null) issues.push("x fehlt");
+    else if (!Number.isFinite(x)) issues.push("x ist keine Zahl");
+    else if (!Number.isInteger(x)) issues.push("x ist keine ganze Zahl");
+    else if (x < 0) issues.push("x ist negativ");
+    if (entry.y === undefined || entry.y === null) issues.push("y fehlt");
+    else if (!Number.isFinite(y)) issues.push("y ist keine Zahl");
+    else if (!Number.isInteger(y)) issues.push("y ist keine ganze Zahl");
+    else if (y < 0) issues.push("y ist negativ");
+    const error = new Error(`Ungültige Koordinaten: ${issues.join(", ")}.`);
+    (error as Error & { messageKey?: string }).messageKey = "formatErrorInvalidCoordinates";
+    throw error;
+  }
 
   const asRecord = entry as Record<string, unknown>;
   const node: CfcNode = {
     id: toStringValue(entry.id, `N${index + 1}`),
     type,
     label: getImportLabelValue(asRecord, type),
-    x: toFiniteNumber(entry.x),
-    y: toFiniteNumber(entry.y),
+    x,
+    y,
     width: template.width,
     height: template.height,
   };
+
+  // Preserve whether the original import contained the export-label field
+  // (e.g. `instanceName`, `expression`, `label`, ...). Adapters may set
+  // `__metadata` on the raw record before calling this parser.
+  const hadExportFieldFlag = (asRecord as any).__metadata?.hadExportLabelField;
+  const hadExecutionOrderFlag = (asRecord as any).__metadata?.hadExecutionOrder;
+  if (!node.__metadata) node.__metadata = {};
+  node.__metadata.hadExportLabelField = hadExportFieldFlag === undefined ? true : Boolean(hadExportFieldFlag);
+  node.__metadata.hadExecutionOrder = hadExecutionOrderFlag === undefined ? hasExplicitExecutionOrder : Boolean(hadExecutionOrderFlag);
 
   if (typeof entry.typeName === "string" && entry.typeName.length > 0) {
     node.typeName = isBoxNode ? sanitizeDeclarationName(entry.typeName) || undefined : entry.typeName;
@@ -220,6 +335,110 @@ export const sortParsedNodeEntries = (entries: ParsedNodeEntry[]): ParsedNodeEnt
 };
 
 const joinQuoted = (values: string[]): string => values.map((value) => `"${value}"`).join(", ");
+
+export const collectOrderedNodeValidationErrors = (entries: ParsedNodeEntry[]): OrderedNodeValidationError[] => {
+  const errors: OrderedNodeValidationError[] = [];
+  const getLine = (entry: ParsedNodeEntry): number => entry.lineNumber ?? entry.sourceIndex + 1;
+
+  const buildDuplicateError = (
+    lineValues: number[],
+    messageKey: "formatErrorDuplicateNodeId" | "formatErrorDuplicateExecutionOrder",
+    message: string,
+  ): OrderedNodeValidationError => {
+    const sortedLines = [...new Set(lineValues)].sort((left, right) => left - right);
+    return {
+      line: sortedLines[0] ?? 1,
+      lines: sortedLines,
+      messageKey,
+      message,
+    };
+  };
+
+  const idCounts = new Map<string, number>();
+  const idLines = new Map<string, number[]>();
+  entries.forEach((entry) => {
+    const id = entry.node.id;
+    idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+    const lines = idLines.get(id) ?? [];
+    lines.push(getLine(entry));
+    idLines.set(id, lines);
+  });
+
+  const duplicateIds = new Set([...idCounts.entries()].filter(([, count]) => count > 1).map(([id]) => id));
+  duplicateIds.forEach((id) => {
+    errors.push(
+      buildDuplicateError(
+        idLines.get(id) ?? [],
+        "formatErrorDuplicateNodeId",
+        `id bereits belegt (${joinQuoted([id])})`,
+      ),
+    );
+  });
+
+  const explicitEntries = entries.filter((entry) => entry.hasExplicitExecutionOrder);
+  if (explicitEntries.length === 0) {
+    return errors;
+  }
+
+  const orderCounts = new Map<number, number>();
+  const orderLines = new Map<number, number[]>();
+  explicitEntries.forEach((entry) => {
+    orderCounts.set(entry.executionOrder, (orderCounts.get(entry.executionOrder) ?? 0) + 1);
+    const lines = orderLines.get(entry.executionOrder) ?? [];
+    lines.push(getLine(entry));
+    orderLines.set(entry.executionOrder, lines);
+  });
+
+  const duplicateOrders = new Set([...orderCounts.entries()].filter(([, count]) => count > 1).map(([order]) => order));
+  duplicateOrders.forEach((order) => {
+    errors.push(
+      buildDuplicateError(
+        orderLines.get(order) ?? [],
+        "formatErrorDuplicateExecutionOrder",
+        `executionOrder bereits belegt (${order})`,
+      ),
+    );
+  });
+
+  const sortedOrders = [...orderCounts.keys()].sort((left, right) => left - right);
+  for (let index = 0; index < sortedOrders.length; index += 1) {
+    const expected = index + 1;
+    const currentOrder = sortedOrders[index] ?? expected;
+    if (currentOrder !== expected) {
+      const offendingEntry = explicitEntries.find((entry) => entry.executionOrder === currentOrder) ?? explicitEntries[0]!;
+      errors.push({
+        line: getLine(offendingEntry),
+        messageKey: "formatErrorNonContiguousExecutionOrder",
+        message: `executionOrder muss durchgängig nummeriert sein (erwartet 1..${sortedOrders.length}, gefunden ${sortedOrders.join(", ")})`,
+      });
+      break;
+    }
+  }
+
+  return errors;
+};
+
+export const collectDuplicateGroupedErrors = (
+  entries: Array<{ key: string; line: number }>,
+  messageKey: string,
+  messageFactory: (key: string) => string,
+): OrderedNodeValidationError[] => {
+  const grouped = new Map<string, number[]>();
+  entries.forEach((entry) => {
+    const lines = grouped.get(entry.key) ?? [];
+    lines.push(entry.line);
+    grouped.set(entry.key, lines);
+  });
+
+  return [...grouped.entries()]
+    .filter(([, lines]) => lines.length > 1)
+    .map(([key, lines]) => ({
+      line: lines[0] ?? 1,
+      lines: [...new Set(lines)].sort((left, right) => left - right),
+      messageKey,
+      message: messageFactory(key),
+    }));
+};
 
 const collectUniqueNodeIdError = (entries: ParsedNodeEntry[]): string | null => {
   const seen = new Set<string>();
@@ -307,9 +526,12 @@ export const toExecutionOrderedSerializableGraph = (
     version: graph.version,
     nodes: graph.nodes.map((node) => {
       const isExecOrdered = isExecutionOrderedNode(node);
-      const executionOrder = typeof node.executionOrder === "number"
-        ? Math.max(1, Math.floor(node.executionOrder))
-        : (isExecOrdered ? getExecutionOrderByNodeId(graph.nodes, node.id) : null);
+      const shouldEmitOrder = isExecOrdered && (node.__metadata?.hadExecutionOrder ?? true) !== false;
+      const executionOrder = shouldEmitOrder
+        ? (typeof node.executionOrder === "number"
+          ? Math.max(1, Math.floor(node.executionOrder))
+          : getExecutionOrderByNodeId(graph.nodes, node.id))
+        : null;
 
       return {
         id: node.id,

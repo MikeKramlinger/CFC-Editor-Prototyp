@@ -1231,6 +1231,17 @@ textarea {
   cursor: text;
 }
 
+.data-error {
+  color: transparent;
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: #c92a2a;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  pointer-events: auto;
+  cursor: text;
+}
+
 .metrics {
   margin: 0;
   min-height: 18px;

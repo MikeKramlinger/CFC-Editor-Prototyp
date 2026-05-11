@@ -6,15 +6,16 @@ import { getNodeTemplateByType } from "../../src/model.js";
 import { createGraph, createNode, createConnection } from "../unit/helpers.js";
 import { cfcDslFormat } from "../../src/formats/cfcDsl.js";
 import { jsonFormat } from "../../src/formats/json.js";
+import { xmlFormat } from "../../src/formats/xml.js";
 
 const createReferenceGraph = () => {
   const nodes = [
     createNode("N1", "input", 0, 0, { label: "Input α" }),
-    createNode("N2", "box", 6, 0, { label: "Main \"Box\"" }),
-    createNode("N3", "composer", 12, 0, { label: "Composer / Bereich" }),
+    createNode("N2", "box", 6, 0, { label: "Main \"Box\"", typeName: "FB_MAIN", executionOrder: 1 }),
+    createNode("N3", "composer", 12, 0, { label: "Composer / Bereich", executionOrder: 2 }),
     createNode("N4", "selector", 18, 0, { label: "Selector äöü" }),
     createNode("N5", "comment", 24, 0, { label: "Kommentar" }),
-    createNode("N6", "output", 30, 0, { label: "Output" }),
+    createNode("N6", "output", 30, 0, { label: "Output", executionOrder: 3 }),
   ];
 
   const connections = [
@@ -39,7 +40,7 @@ describe("format roundtrip integration", () => {
     for (const adapter of adapters) {
       const firstSerialized = adapter.serialize(referenceGraph);
       const firstParsed = adapter.deserialize(firstSerialized);
-      const secondSerialized = adapter.serialize(firstParsed);
+      const secondSerialized = adapter.serialize(firstParsed.graph);
 
       expect(secondSerialized.length).toBeGreaterThan(0);
       expect(adapter.deserialize(secondSerialized)).toEqual(firstParsed);
@@ -52,7 +53,7 @@ describe("format roundtrip integration", () => {
     for (const adapter of adaptersWithoutPlcopenXml()) {
       const s1 = adapter.serialize(referenceGraph);
       const g1 = adapter.deserialize(s1);
-      const s2 = adapter.serialize(g1);
+      const s2 = adapter.serialize(g1.graph);
       const g2 = adapter.deserialize(s2);
 
       expect(g2).toEqual(g1);
@@ -63,8 +64,8 @@ describe("format roundtrip integration", () => {
     const raw = JSON.stringify({
       version: "2.0",
       nodes: [
-        { id: "A", label: "X", executionOrder: 2, x: 1, y: 2, width: 3, height: 4 },
-        { id: "B", type: "box", label: "Y", executionOrder: 1, x: 5, y: 6, width: 7, height: 8 },
+        { id: "A", type: "box", label: "X", typeName: "FB_A", instanceName: "X", executionOrder: 2, x: 1, y: 2, width: 3, height: 4 },
+        { id: "B", type: "box", label: "Y", typeName: "FB_B", instanceName: "Y", executionOrder: 1, x: 5, y: 6, width: 7, height: 8 },
       ],
       connections: [
         { id: "C1", fromNodeId: "B", fromPin: "output", toNodeId: "A", toPin: "input" },
@@ -72,7 +73,7 @@ describe("format roundtrip integration", () => {
       ],
     });
 
-    const graph = jsonFormat.deserialize(raw);
+    const graph = jsonFormat.deserialize(raw).graph;
 
     expect(graph.nodes[0]?.id).toBe("B");
     expect(graph.nodes[1]?.type).toBe("box");
@@ -89,7 +90,7 @@ B.OUT --> A.IN1
 B.OUT --> Z.IN1
 `;
 
-    const graph = cfcDslFormat.deserialize(raw);
+    const graph = cfcDslFormat.deserialize(raw).graph;
 
     expect(graph.version).toBe("1.0");
     expect(graph.nodes[0]?.id).toBe("B");
@@ -97,7 +98,7 @@ B.OUT --> Z.IN1
     expect(graph.connections[0]).toMatchObject({ fromPin: "output:0", toPin: "input:0" });
   });
 
-  it("throws on invalid explicit node type in JSON", () => {
+  it("reports invalid explicit node type in JSON", () => {
     const raw = JSON.stringify({
       version: "1.0",
       nodes: [
@@ -106,7 +107,9 @@ B.OUT --> Z.IN1
       connections: [],
     });
 
-    expect(() => jsonFormat.deserialize(raw)).toThrow("ungültiger type");
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors[0]?.message).toContain("Unbekannter Knotentyp");
   });
 
   it("throws on invalid explicit node type in XML", () => {
@@ -138,29 +141,249 @@ B.OUT --> Z.IN1
     const adapter = getAdapterById("plcopen-xml");
     // PLCopenXML doesn't validate node types during deserialization
     // It accepts the structure as-is
-    const graph = adapter.deserialize(raw);
+    const graph = adapter.deserialize(raw).graph;
     expect(graph.nodes).toBeDefined();
   });
 
-  it("throws on duplicate node ids in JSON", () => {
+  it("reports invalid XML attributes", () => {
+    const baseGraph = createGraph([
+      createNode("N1", "box", 0, 0, { label: "Timer_1" }),
+      createNode("N2", "box", 10, 0, { label: "Other" }),
+    ], [
+      createConnection("C1", "N1", "N2", { fromPin: "output:0", toPin: "input:0" }),
+      createConnection("C2", "N2", "N1", { fromPin: "output:0", toPin: "input:0" }),
+    ]);
+
+    let raw = xmlFormat.serialize(baseGraph);
+    raw = raw.replace('id="N1"', 'id="N1" foo="bar"');
+
+    const result = xmlFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => (error.message ?? "").includes("Ungültige Attribute"))).toBe(true);
+  });
+
+  it("reports missing XML required attributes", () => {
+    const baseGraph = createGraph([
+      createNode("N1", "input", 0, 0, { label: "Input_1" }),
+    ], []);
+
+    const raw = xmlFormat.serialize(baseGraph).replace('expression="Input_1"', '');
+
+    const result = xmlFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorMissingAttributes")).toBe(true);
+  });
+  it("reports missing XML type attributes", () => {
+    const baseGraph = createGraph([
+      createNode("N1", "input", 0, 0, { label: "Input_1" }),
+    ], []);
+
+    const raw = xmlFormat.serialize(baseGraph).replace('type="input"', '');
+
+    const result = xmlFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorMissingAttributes")).toBe(true);
+    expect(result.errors.some((error) => (error.message ?? "").includes("type"))).toBe(true);
+  });
+
+  it("reports duplicate XML instance names and connection ids", () => {
+    const baseGraph = createGraph([
+      createNode("N1", "box", 0, 0, { label: "Timer_1" }),
+      createNode("N2", "box", 10, 0, { label: "Timer_1" }),
+    ], [
+      createConnection("C1", "N1", "N2", { fromPin: "output:0", toPin: "input:0" }),
+      createConnection("C1", "N2", "N1", { fromPin: "output:0", toPin: "input:0" }),
+    ]);
+
+    const result = xmlFormat.deserialize(xmlFormat.serialize(baseGraph));
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorDuplicateInstanceName")).toBe(true);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorDuplicateConnectionId")).toBe(true);
+  });
+
+  it("reports invalid XML coordinates", () => {
+    const baseGraph = createGraph([
+      createNode("N1", "box", 0, 0, { label: "Timer_1" }),
+    ], []);
+
+    const raw = xmlFormat.serialize(baseGraph).replace('x="0" y="0"', 'x="-1" y="0"');
+    const result = xmlFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidCoordinates")).toBe(true);
+  });
+
+  it("reports invalid XML decimal coordinates", () => {
+    const baseGraph = createGraph([
+      createNode("N1", "box", 0, 0, { label: "Timer_1" }),
+    ], []);
+
+    const raw = xmlFormat.serialize(baseGraph).replace('x="0" y="0"', 'x="1.5" y="0"');
+    const result = xmlFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidCoordinates")).toBe(true);
+  });
+
+  it("reports invalid XML executionOrder values", () => {
+    const baseGraph = createGraph([
+      createNode("N1", "box", 0, 0, { label: "Timer_1", executionOrder: 1 }),
+    ], []);
+
+    const raw = xmlFormat.serialize(baseGraph).replace('executionOrder="1"', 'executionOrder="1.5"');
+    const result = xmlFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidExecutionOrder")).toBe(true);
+  });
+
+  it("reports duplicate node ids and executionOrders on all affected rows in JSON", () => {
     const raw = JSON.stringify({
       version: "1.0",
       nodes: [
         { id: "N1", type: "box", label: "A", executionOrder: 1, x: 1, y: 1 },
         { id: "N1", type: "box", label: "B", executionOrder: 1, x: 4, y: 1 },
+        { id: "N1", type: "box", label: "C", executionOrder: 1, x: 7, y: 1 },
       ],
       connections: [],
     });
 
-    let message = "";
-    try {
-      jsonFormat.deserialize(raw);
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    }
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    const duplicateIdErrors = result.errors.filter((error) => error.messageKey === "formatErrorDuplicateNodeId");
+    const duplicateOrderErrors = result.errors.filter((error) => error.messageKey === "formatErrorDuplicateExecutionOrder");
 
-    expect(message).toContain("id bereits belegt");
-    expect(message).toContain("executionOrder bereits belegt");
+    expect(duplicateIdErrors).toHaveLength(1);
+    expect(duplicateOrderErrors).toHaveLength(1);
+    expect(duplicateIdErrors[0]?.lines).toEqual([1, 2, 3]);
+    expect(duplicateOrderErrors[0]?.lines).toEqual([1, 2, 3]);
+  });
+
+  it("reports invalid JSON attributes", () => {
+    const raw = JSON.stringify({
+      version: "1.0",
+      nodes: [
+        { id: "N1", type: "box", label: "Timer_1", executionOrder: 1, x: 1, y: 1, foo: true },
+        { id: "N2", type: "box", label: "Timer_2", executionOrder: 2, x: 5, y: 1 },
+      ],
+      connections: [],
+    });
+
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidAttributes")).toBe(true);
+  });
+
+  it("reports missing JSON required attributes", () => {
+    const raw = JSON.stringify({
+      version: "1.0",
+      nodes: [
+        { id: "N1", type: "input", label: "In1", x: 1, y: 1 },
+      ],
+      connections: [],
+    });
+
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorMissingAttributes")).toBe(true);
+  });
+
+  it("reports duplicate JSON instance names and connection ids", () => {
+    const raw = JSON.stringify({
+      version: "1.0",
+      nodes: [
+        { id: "N1", type: "box", label: "Timer_1", executionOrder: 1, x: 1, y: 1 },
+        { id: "N2", type: "box", label: "Timer_1", executionOrder: 2, x: 5, y: 1 },
+      ],
+      connections: [
+        { id: "C1", fromNodeId: "N1", fromPin: "output:0", toNodeId: "N2", toPin: "input:0" },
+        { id: "C1", fromNodeId: "N1", fromPin: "output:0", toNodeId: "N2", toPin: "input:0" },
+      ],
+    });
+
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorDuplicateInstanceName")).toBe(true);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorDuplicateConnectionId")).toBe(true);
+  });
+
+  it("reports invalid JSON coordinates", () => {
+    const raw = JSON.stringify({
+      version: "1.0",
+      nodes: [
+        { id: "N1", type: "box", label: "Timer_1", executionOrder: 1, x: -5, y: 1 },
+      ],
+      connections: [],
+    });
+
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidCoordinates")).toBe(true);
+  });
+  it("reports missing JSON required attributes", () => {
+    const raw = JSON.stringify({
+      version: "1.0",
+      nodes: [
+        { id: "N1", type: "input", label: "In1", x: 1, y: 1 },
+      ],
+      connections: [],
+    });
+
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorMissingAttributes")).toBe(true);
+  });
+  it("reports missing JSON type attributes", () => {
+    const raw = JSON.stringify({
+      version: "1.0",
+      nodes: [
+        { id: "N1", label: "In1", x: 1, y: 1 },
+      ],
+      connections: [],
+    });
+
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorMissingAttributes")).toBe(true);
+    expect(result.errors.some((error) => (error.message ?? "").includes("type"))).toBe(true);
+  });
+  it("reports invalid JSON coordinate syntax", () => {
+    const raw = `{
+  "version": "1.0",
+  "nodes": [
+    { "id": "N1", "type": "box", "label": "Timer_1", "executionOrder": 1, "x": g, "y": 1 }
+  ],
+  "connections": []
+}`;
+
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidCoordinates")).toBe(true);
+  });
+
+  it("reports invalid JSON decimal coordinates", () => {
+    const raw = JSON.stringify({
+      version: "1.0",
+      nodes: [
+        { id: "N1", type: "box", label: "Timer_1", executionOrder: 1, x: 1.5, y: 2 },
+      ],
+      connections: [],
+    });
+
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidCoordinates")).toBe(true);
+  });
+
+  it("reports invalid JSON executionOrder values", () => {
+    const raw = `{
+  "version": "1.0",
+  "nodes": [
+    { "id": "N1", "type": "box", "label": "Timer_1", "executionOrder": f, "x": 1, "y": 1 }
+  ],
+  "connections": []
+}`;
+
+    const result = jsonFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidExecutionOrder")).toBe(true);
   });
 
   it("throws on non-contiguous executionOrder in CFC-DSL", () => {
@@ -169,7 +392,30 @@ N1[A] {o: 1, x: 1, y: 1}
 N2[B] {o: 3, x: 8, y: 1}
 `;
 
-    expect(() => cfcDslFormat.deserialize(raw)).toThrow("executionOrder muss durchgängig nummeriert sein");
+    const result = cfcDslFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.map((error) => error.message ?? error.messageKey).join(" ")).toContain("executionOrder muss durchgängig nummeriert sein");
+  });
+
+  it("reports invalid executionOrder values in CFC-DSL", () => {
+    const raw = `cfc LR
+N1[A] {o: f, x: 1, y: 1}
+`;
+
+    const result = cfcDslFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidExecutionOrder")).toBe(true);
+  });
+
+  it("reports invalid metadata keys with details in CFC-DSL", () => {
+    const raw = `cfc LR
+N1[A] {o: 1, x: 1, y: 1, foo: 2}
+`;
+
+    const result = cfcDslFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidMetadataKey")).toBe(true);
+    expect(result.errors.some((error) => (error.message ?? "").includes("foo"))).toBe(true);
   });
 
   it("supports unquoted text syntax and legacy comment syntax in CFC-DSL", () => {
@@ -186,7 +432,7 @@ In1 --> MOut
 MIn --> J1
 `;
 
-    const graph = cfcDslFormat.deserialize(raw);
+    const graph = cfcDslFormat.deserialize(raw).graph;
 
     expect(graph.nodes.some((node) => node.type === "input" && node.label === "GVL.bSensor")).toBe(true);
     expect(graph.nodes.some((node) => node.type === "jump" && node.label === "ErrorRoutine")).toBe(true);
@@ -196,6 +442,47 @@ MIn --> J1
     expect(graph.nodes.some((node) => node.type === "connection-mark-source" && node.label === "ToPhase2")).toBe(true);
     expect(graph.nodes.some((node) => node.type === "connection-mark-sink" && node.label === "ToPhase2")).toBe(true);
     expect(graph.connections.length).toBe(2);
+  });
+
+  it("reports duplicate instance names in CFC-DSL", () => {
+    const raw = `cfc LR
+TimerA[Main @ TON] {o: 1, x: 1, y: 1}
+TimerB[Main @ TON] {o: 2, x: 3, y: 2}
+`;
+
+    const result = cfcDslFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorDuplicateInstanceName")).toBe(true);
+  });
+
+  it("reports missing CFC-DSL required attributes", () => {
+    const raw = `cfc LR
+In1[/ /] {x: 2, y: 3}
+`;
+
+    const result = cfcDslFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorMissingAttributes")).toBe(true);
+  });
+
+  it("reports invalid coordinates in CFC-DSL", () => {
+    const raw = `cfc LR
+TimerA[Main @ TON] {o: 1, x: -3, y: 2}
+`;
+
+    const result = cfcDslFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidCoordinates")).toBe(true);
+  });
+
+  it("reports invalid decimal coordinates in CFC-DSL", () => {
+    const raw = `cfc LR
+TimerA[Main @ TON] {o: 1, x: 3.5, y: 2}
+`;
+
+    const result = cfcDslFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidCoordinates")).toBe(true);
   });
 
   it("throws on duplicate id and executionOrder in XML node list", () => {
@@ -230,7 +517,7 @@ MIn --> J1
     const adapter = getAdapterById("plcopen-xml");
     // PLCopenXML doesn't validate duplicate localIds during deserialization
     // It accepts the structure as-is (though duplicate IDs would be semantically wrong)
-    const graph = adapter.deserialize(raw);
+    const graph = adapter.deserialize(raw).graph;
     // Both nodes might be parsed, or one might override the other
     expect(graph.nodes.length).toBeGreaterThan(0);
   });
@@ -323,7 +610,7 @@ MIn --> J1
 </project>`;
 
     const adapter = getAdapterById("plcopen-xml");
-    const graph = adapter.deserialize(raw);
+    const graph = adapter.deserialize(raw).graph;
 
     expect(graph.nodes).toHaveLength(4);
     expect(graph.nodes.some((node) => node.type === "input" && node.label === "InputA")).toBe(true);
@@ -341,7 +628,7 @@ MIn --> J1
     ]);
 
     for (const adapter of adaptersWithoutPlcopenXml()) {
-      const parsed = adapter.deserialize(adapter.serialize(graph));
+      const parsed = adapter.deserialize(adapter.serialize(graph)).graph;
       for (const node of parsed.nodes) {
         const template = getNodeTemplateByType(node.type);
         expect(node.width).toBeGreaterThanOrEqual(template.width);
@@ -356,7 +643,7 @@ MIn --> J1
     ]);
 
     for (const adapter of adaptersWithoutPlcopenXml().filter((entry) => entry.id !== "cfc-dsl")) {
-      const parsed = adapter.deserialize(adapter.serialize(graph));
+      const parsed = adapter.deserialize(adapter.serialize(graph)).graph;
       const comment = parsed.nodes.find((node) => node.id === "N1");
       expect(comment).toBeDefined();
       const template = getNodeTemplateByType("comment");

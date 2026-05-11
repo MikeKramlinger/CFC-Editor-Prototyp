@@ -806,17 +806,26 @@ const setQuizModeActive = (active: boolean): void => {
 };
 
 const importQuizDataIntoGraph = (): boolean => {
-  let importedGraph: CfcGraph;
   const rawDataText = dataPanel.getDataText();
-  try {
-    importedGraph = getCurrentAdapter().deserialize(rawDataText);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    quizFeedback.textContent = `❌ ${message}`;
+  const deserializeResult = getCurrentAdapter().deserialize(rawDataText);
+
+  // Block import if there are format errors
+  if (!deserializeResult.isValid && deserializeResult.errors.length > 0) {
+    const errorMessages = deserializeResult.errors
+      .map((error) => {
+        if (error.messageKey === "formatErrorInvalidDataFormat") {
+          return error.message || error.messageKey;
+        }
+        return t(currentLanguage, error.messageKey as any) || error.message || error.messageKey;
+      })
+      .join(" | ");
+    
+    quizFeedback.textContent = `❌ ${t(currentLanguage, "formatErrorImportBlocked")} (${errorMessages})`;
     quizSession.saveActiveState(createActiveQuizTaskSessionState());
     return false;
   }
 
+  const importedGraph = deserializeResult.graph;
   editor.loadGraph(importedGraph);
   currentGraph = editor.getGraph();
   const normalizedDataText = getCurrentAdapter().serialize(currentGraph);
@@ -942,7 +951,9 @@ const dataPanel = createDataPanelController({
   declarationText: dataPanelUi.declarationText,
   declarationLines: dataPanelUi.declarationLines,
   declarationSyntax: dataPanelUi.declarationSyntax,
+  dataSyntax: dataPanelUi.dataSyntax,
   metrics: dataPanelUi.metrics,
+  getCurrentLanguage: () => currentLanguage,
   onDeclarationsChanged: (declarations) => {
     onEditorDeclarationsChanged();
   },
@@ -1200,6 +1211,7 @@ const toolbar = createToolbarController({
   getDataText: () => dataPanel.getDataText(),
   setDataText: (value) => dataPanel.setDataText(value),
   setMetrics: (value) => dataPanel.setMetrics(value),
+  setDataFormatErrors: (errors) => dataPanel.setDataFormatErrors(errors),
 });
 
 quizToggleButton.addEventListener("click", () => {

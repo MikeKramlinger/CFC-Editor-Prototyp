@@ -408,3 +408,7 @@ body[data-theme="dark"] .syntax-keyword {
 body[data-theme="dark"] .declaration-error {
   text-decoration-color: #ff7b7b;
 }
+
+body[data-theme="dark"] .data-error {
+  text-decoration-color: #ff7b7b;
+}

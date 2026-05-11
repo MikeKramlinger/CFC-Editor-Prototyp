@@ -72,7 +72,8 @@ OUTPUT(Out) {
 In => Out
 `;
 
-    const graph = cfcStFormat.deserialize(raw);
+  const result = cfcStFormat.deserialize(raw);
+  const graph = result.graph;
     expect(graph.nodes.some((n) => n.id === "INP")).toBe(true);
     expect(graph.nodes.some((n) => n.id === "OUT")).toBe(true);
     expect(graph.connections).toHaveLength(1);
@@ -110,11 +111,174 @@ BOX(Main) {
 }
 `;
 
-    const graph = cfcStFormat.deserialize(raw);
+  const result = cfcStFormat.deserialize(raw);
+  const graph = result.graph;
 
     expect(graph.nodes.map((node) => node.id)).toEqual(["INP", "OUT", "BOX"]);
     expect(graph.nodes.find((node) => node.id === "BOX")?.executionOrder).toBe(1);
     expect(graph.nodes.find((node) => node.id === "OUT")?.executionOrder).toBe(2);
     expect(graph.nodes.find((node) => node.id === "INP")?.executionOrder).toBeUndefined();
+  });
+
+  it("reports unknown node types and duplicate box instance names", () => {
+    const unknownTypeRaw = `declaration:
+
+PROGRAM CFC
+VAR
+END_VAR
+
+cfc:
+
+UNKNOWN(Test) {
+  @id = N1,
+  @x = 0,
+  @y = 0
+}
+`;
+
+    const unknownTypeResult = cfcStFormat.deserialize(unknownTypeRaw);
+    expect(unknownTypeResult.isValid).toBe(false);
+    expect(unknownTypeResult.errors.some((error) => error.messageKey === "formatErrorUnknownNodeType")).toBe(true);
+
+    const duplicateLabelRaw = `declaration:
+
+PROGRAM CFC
+VAR
+END_VAR
+
+cfc:
+
+Main : BOX(TON) {
+  @id = B1,
+  @x = 0,
+  @y = 0
+}
+
+Main : BOX(TON) {
+  @id = B2,
+  @x = 10,
+  @y = 0
+}
+`;
+
+    const duplicateLabelResult = cfcStFormat.deserialize(duplicateLabelRaw);
+    expect(duplicateLabelResult.isValid).toBe(false);
+    expect(duplicateLabelResult.errors.some((error) => error.messageKey === "formatErrorDuplicateInstanceName")).toBe(true);
+  });
+
+  it("reports invalid coordinates in CFC-ST", () => {
+    const raw = `declaration:
+
+PROGRAM CFC
+VAR
+END_VAR
+
+cfc:
+
+BOX(Main) {
+  @id = B1,
+  @x = -1,
+  @y = 0
+}
+`;
+
+    const result = cfcStFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidCoordinates")).toBe(true);
+  });
+
+  it("reports decimal coordinates in CFC-ST on the coordinate line", () => {
+    const raw = `declaration:
+
+PROGRAM CFC
+VAR
+END_VAR
+
+cfc:
+
+BOX(Main) {
+  @id = B1,
+  @x = 1.5,
+  @y = 0
+}
+`;
+
+    const result = cfcStFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors[0]?.messageKey).toBe("formatErrorInvalidCoordinates");
+    expect(result.errors[0]?.line).toBe(11);
+  });
+
+  it("reports missing CFC-ST required attributes", () => {
+    const raw = `declaration:
+
+PROGRAM CFC
+VAR
+END_VAR
+
+cfc:
+
+INPUT() {
+  @id = IN1,
+  @x = 0,
+  @y = 0
+}
+`;
+
+    const result = cfcStFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorMissingAttributes")).toBe(true);
+  });
+
+  it("reports invalid executionOrder values in CFC-ST", () => {
+    const raw = `declaration:
+
+PROGRAM CFC
+VAR
+END_VAR
+
+cfc:
+
+BOX(Main) {
+  @id = B1,
+  @order = f,
+  @x = 0,
+  @y = 0
+}
+`;
+
+    const result = cfcStFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidExecutionOrder")).toBe(true);
+  });
+
+  it("continues collecting errors after an unknown CFC-ST metadata attribute", () => {
+    const raw = `declaration:
+
+PROGRAM CFC
+VAR
+END_VAR
+
+cfc:
+
+BOX(Main) {
+  @id = B1,
+  @x = 0,
+  @y = 0,
+  @foo = 1
+}
+
+BOX(Main) {
+  @id = B2,
+  @x = 10,
+  @y = 0
+  @bar = 2
+}
+`;
+
+    const result = cfcStFormat.deserialize(raw);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.some((error) => error.messageKey === "formatErrorInvalidMetadataKey")).toBe(true);
+    expect(result.errors.filter((error) => error.messageKey === "formatErrorInvalidMetadataKey")).toHaveLength(2);
   });
 });

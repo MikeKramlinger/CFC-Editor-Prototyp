@@ -1,4 +1,5 @@
 import type { CfcFormatAdapter } from "../../formats/types.js";
+import type { FormatError } from "../../formats/errors.js";
 import { type CfcGraph, type CfcNodeType, createEmptyGraph } from "../../model.js";
 import { createBulkController } from "./bulkController.js";
 
@@ -61,6 +62,7 @@ export interface ToolbarControllerOptions {
   getDataText: () => string;
   setDataText: (value: string) => void;
   setMetrics: (value: string) => void;
+  setDataFormatErrors?: (errors: FormatError[]) => void;
 }
 
 export interface ToolbarController {
@@ -115,6 +117,7 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
     const adapter = options.getCurrentAdapter();
     const payload = adapter.serialize(options.getCurrentGraph());
     options.setDataText(payload);
+    options.setDataFormatErrors?.([]);
     const sizeKb = getPayloadSizeKb(payload);
     options.setMetrics(options.formatExportMetric?.(sizeKb) ?? `Exportgröße: ${sizeKb.toFixed(2)} KB`);
   };
@@ -125,7 +128,19 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
       const rawDataText = options.getDataText();
       const previousGraph = options.getCurrentGraph();
       const previousDeclarations = previousGraph?.declarations ?? "";
-      const graph = adapter.deserialize(rawDataText);
+      
+      const deserializeResult = adapter.deserialize(rawDataText);
+      
+      // Pass format errors to UI
+      options.setDataFormatErrors?.(deserializeResult.errors);
+      
+      // Block import if there are format errors
+      if (!deserializeResult.isValid && deserializeResult.errors.length > 0) {
+        // Silently fail - can be improved with error UI notification later
+        return;
+      }
+      
+      const graph = deserializeResult.graph;
       const modelDefaultDecl = createEmptyGraph().declarations;
       if (!graph.declarations || graph.declarations.trim().length === 0 || graph.declarations === modelDefaultDecl) {
         graph.declarations = previousDeclarations;
@@ -253,9 +268,18 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
       const adapter = options.getCurrentAdapter();
       const start = performance.now();
       const exported = adapter.serialize(options.getCurrentGraph());
-      const imported = adapter.deserialize(exported);
-      options.loadGraph(imported);
-      options.setCurrentGraph(imported);
+      const deserializeResult = adapter.deserialize(exported);
+      
+      // Pass errors to UI
+      options.setDataFormatErrors?.(deserializeResult.errors);
+      
+      // Skip roundtrip if deserialization has errors
+      if (!deserializeResult.isValid) {
+        return;
+      }
+      
+      options.loadGraph(deserializeResult.graph);
+      options.setCurrentGraph(deserializeResult.graph);
       options.setDataText(exported);
       const elapsedMs = performance.now() - start;
       const sizeKb = getPayloadSizeKb(exported);

@@ -63,6 +63,13 @@ export interface CfcNode {
   executionOrder?: number;
   typeName?: NormalizedNodeName;
   label: NormalizedNodeName;
+  __metadata?: {
+    hadExportLabelField?: boolean;
+    hadExecutionOrder?: boolean;
+    hadId?: boolean;
+    hadX?: boolean;
+    hadY?: boolean;
+  };
   x: number;
   y: number;
   width: number;

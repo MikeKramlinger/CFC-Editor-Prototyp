@@ -296,7 +296,8 @@ describe("PLCopenXML format", () => {
   </addData>
 </project>`;
 
-      const graph = plcopenXmlFormat.deserialize(xml);
+      const result = plcopenXmlFormat.deserialize(xml);
+      const graph = result.graph;
 
       expect(graph.nodes).toHaveLength(1);
       expect(graph.nodes[0]).toMatchObject({
@@ -306,6 +307,314 @@ describe("PLCopenXML format", () => {
         y: 0,
       });
       expect(graph.declarations).toContain("In : INT;");
+    });
+
+    it("reports an unknown node type", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface><localVars /></interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <vendorElement localId="0">
+                  <position x="0" y="0" />
+                  <alternativeText><xhtml>Unknown</xhtml></alternativeText>
+                  <addData>
+                    <data name="http://www.3s-software.com/plcopenxml/cfcelementtype" handleUnknown="implementation">
+                      <ElementType>mystery</ElementType>
+                    </data>
+                  </addData>
+                </vendorElement>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+</project>`;
+
+      const result = plcopenXmlFormat.deserialize(xml);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("reports invalid PLCopenXML attributes", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface><localVars /></interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <inVariable localId="0" foo="bar">
+                  <position x="0" y="0" />
+                  <connectionPointOut><expression /></connectionPointOut>
+                  <expression>In</expression>
+                </inVariable>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+</project>`;
+
+      const result = plcopenXmlFormat.deserialize(xml);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("reports invalid PLCopenXML coordinates", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface><localVars /></interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <inVariable localId="0">
+                  <position x="-1" y="abc" />
+                  <connectionPointOut><expression /></connectionPointOut>
+                  <expression>In</expression>
+                </inVariable>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+</project>`;
+
+      const result = plcopenXmlFormat.deserialize(xml);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("reports invalid PLCopenXML decimal coordinates", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface><localVars /></interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <inVariable localId="0">
+                  <position x="1.5" y="0" />
+                  <connectionPointOut><expression /></connectionPointOut>
+                  <expression>In</expression>
+                </inVariable>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+</project>`;
+
+      const result = plcopenXmlFormat.deserialize(xml);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("reports missing PLCopenXML required attributes", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface><localVars /></interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <inVariable localId="0">
+                  <position x="0" y="0" />
+                  <connectionPointOut><expression /></connectionPointOut>
+                </inVariable>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+</project>`;
+
+      const result = plcopenXmlFormat.deserialize(xml);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("reports missing PLCopenXML coordinates", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface><localVars /></interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <inVariable localId="0">
+                  <connectionPointOut><expression /></connectionPointOut>
+                  <expression>In</expression>
+                </inVariable>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+</project>`;
+
+      const result = plcopenXmlFormat.deserialize(xml);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("reports invalid PLCopenXML executionOrderId values", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface><localVars /></interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <inVariable localId="0" executionOrderId="1.5">
+                  <position x="0" y="0" />
+                  <connectionPointOut><expression /></connectionPointOut>
+                  <expression>In</expression>
+                </inVariable>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+</project>`;
+
+      const result = plcopenXmlFormat.deserialize(xml);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("reports duplicate PLCopenXML instance names for blocks", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface><localVars /></interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <block localId="0" typeName="TON" instanceName="Timer_1">
+                  <position x="0" y="0" />
+                </block>
+                <block localId="1" typeName="TON" instanceName="Timer_1">
+                  <position x="20" y="0" />
+                </block>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+</project>`;
+
+      const result = plcopenXmlFormat.deserialize(xml);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("reports duplicate PLCopenXML connector IDs", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface><localVars /></interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC>
+                <inVariable localId="0">
+                  <position x="0" y="0" />
+                  <connectionPointOut><expression /></connectionPointOut>
+                  <expression>In</expression>
+                </inVariable>
+                <connector localId="2" name="">
+                  <position x="0" y="0" />
+                  <connectionPointIn><connection refLocalId="0" formalParameter="In" /></connectionPointIn>
+                </connector>
+                <connector localId="2" name="">
+                  <position x="0" y="0" />
+                  <connectionPointIn><connection refLocalId="0" formalParameter="In" /></connectionPointIn>
+                </connector>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+</project>`;
+
+      const result = plcopenXmlFormat.deserialize(xml);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
     });
 
     it("correctly handles simple serialization and structure", () => {
@@ -393,11 +702,12 @@ describe("PLCopenXML format", () => {
   </addData>
 </project>`;
 
-      const graph = plcopenXmlFormat.deserialize(sourceXml);
+      const result = plcopenXmlFormat.deserialize(sourceXml);
+      const graph = result.graph;
       const firstExport = plcopenXmlFormat.serialize(graph);
 
       installMockDate("2026-05-06T12:45:56.789Z");
-      const secondExport = plcopenXmlFormat.serialize(plcopenXmlFormat.deserialize(firstExport));
+      const secondExport = plcopenXmlFormat.serialize(plcopenXmlFormat.deserialize(firstExport).graph);
 
       expect(firstExport).toContain('creationDateTime="2024-01-01T00:00:00Z"');
       expect(firstExport).toContain('modificationDateTime="2026-05-06T12:34:56.789Z"');

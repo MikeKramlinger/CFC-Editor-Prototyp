@@ -23,7 +23,7 @@ describe("instanceName and typeName serialization", () => {
       graph.nodes.push(boxNode);
 
       const serialized = jsonFormat.serialize(graph);
-      const deserialized = jsonFormat.deserialize(serialized);
+        const deserialized = jsonFormat.deserialize(serialized).graph;
 
       const deserializedNode = deserialized.nodes[0];
       expect(deserializedNode).toBeDefined();
@@ -45,7 +45,7 @@ describe("instanceName and typeName serialization", () => {
       });
 
       const serialized = jsonFormat.serialize(graph);
-      const deserialized = jsonFormat.deserialize(serialized);
+        const deserialized = jsonFormat.deserialize(serialized).graph;
 
       const deserializedNode = deserialized.nodes[0];
       expect(deserializedNode).toBeDefined();
@@ -67,7 +67,7 @@ describe("instanceName and typeName serialization", () => {
       graph.nodes.push(inputNode);
 
       const serialized = jsonFormat.serialize(graph);
-      const deserialized = jsonFormat.deserialize(serialized);
+        const deserialized = jsonFormat.deserialize(serialized).graph;
 
       const deserializedNode = deserialized.nodes[0];
       expect(deserializedNode).toBeDefined();
@@ -92,7 +92,7 @@ describe("instanceName and typeName serialization", () => {
       graph.nodes.push(boxNode);
 
       const serialized = xmlFormat.serialize(graph);
-      const deserialized = xmlFormat.deserialize(serialized);
+        const deserialized = xmlFormat.deserialize(serialized).graph;
 
       const deserializedNode = deserialized.nodes[0];
       expect(deserializedNode).toBeDefined();
@@ -159,7 +159,7 @@ describe("instanceName and typeName serialization", () => {
       graph.nodes.push(boxNode);
 
       const serialized = plcopenXmlFormat.serialize(graph);
-      const deserialized = plcopenXmlFormat.deserialize(serialized);
+        const deserialized = plcopenXmlFormat.deserialize(serialized).graph;
 
       const deserializedNode = deserialized.nodes[0];
       expect(deserializedNode).toBeDefined();
@@ -203,9 +203,9 @@ describe("instanceName and typeName serialization", () => {
       graph.nodes.push(boxNode);
 
       const serialized1 = jsonFormat.serialize(graph);
-      const deserialized1 = jsonFormat.deserialize(serialized1);
+        const deserialized1 = jsonFormat.deserialize(serialized1).graph;
       const serialized2 = jsonFormat.serialize(deserialized1);
-      const deserialized2 = jsonFormat.deserialize(serialized2);
+        const deserialized2 = jsonFormat.deserialize(serialized2).graph;
 
       const node = deserialized2.nodes[0];
       expect(node.typeName).toBe("FB_CustomBox");
@@ -227,9 +227,9 @@ describe("instanceName and typeName serialization", () => {
       graph.nodes.push(boxNode);
 
       const serialized1 = xmlFormat.serialize(graph);
-      const deserialized1 = xmlFormat.deserialize(serialized1);
+        const deserialized1 = xmlFormat.deserialize(serialized1).graph;
       const serialized2 = xmlFormat.serialize(deserialized1);
-      const deserialized2 = xmlFormat.deserialize(serialized2);
+        const deserialized2 = xmlFormat.deserialize(serialized2).graph;
 
       const node = deserialized2.nodes[0];
       expect(node.typeName).toBe("FB_CustomBox");

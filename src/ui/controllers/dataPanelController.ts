@@ -1,5 +1,8 @@
 import type { DeclarationError, Declarations } from "../../declarations/index.js";
 import { parseDeclarations } from "../../declarations/index.js";
+import type { FormatError } from "../../formats/errors.js";
+import { formatErrorMessage } from "../../formats/errors.js";
+import { t, type UiLanguage } from "../../i18n.js";
 import { createTextAreaCodeEditorController } from "./textAreaCodeEditorController.js";
 
 interface DataPanelControllerOptions {
@@ -14,8 +17,11 @@ interface DataPanelControllerOptions {
   declarationText: HTMLTextAreaElement;
   declarationLines: HTMLPreElement;
   declarationSyntax: HTMLPreElement;
+  dataSyntax?: HTMLPreElement;
   metrics: HTMLParagraphElement;
+  getCurrentLanguage?: () => UiLanguage;
   onDeclarationsChanged?: (declarations: Declarations) => void;
+  onDataFormatErrorsChanged?: (errors: FormatError[]) => void;
 }
 
 export type DataPanelMode = "data-model" | "declaration";
@@ -120,6 +126,23 @@ const renderDeclarationSyntax = (
   layer.scrollLeft = scrollLeft;
 };
 
+const renderDataSyntax = (
+  text: string,
+  layer: HTMLPreElement,
+  scrollTop: number,
+  scrollLeft: number,
+): void => {
+  const lines = text.split("\n");
+  layer.innerHTML = lines
+    .map(
+      (line, index) =>
+        `<span class="data-line" data-line-number="${index + 1}">${escapeHtml(line)}</span>`,
+    )
+    .join("\n");
+  layer.scrollTop = scrollTop;
+  layer.scrollLeft = scrollLeft;
+};
+
 export interface DataPanelController {
   setMetrics: (text: string) => void;
   setDataText: (value: string) => void;
@@ -129,12 +152,17 @@ export interface DataPanelController {
   setMode: (mode: DataPanelMode) => void;
   getMode: () => DataPanelMode;
   getDeclarations: () => Declarations;
+  setDataFormatErrors: (errors: FormatError[]) => void;
 }
 
 export const createDataPanelController = (options: DataPanelControllerOptions): DataPanelController => {
   let isExpanded = false;
   let mode: DataPanelMode = "data-model";
   let currentDeclarations: Declarations = parseDeclarations(DEFAULT_DECLARATION_TEXT);
+  let currentDataFormatErrors: FormatError[] = [];
+  let lastDataText = "";
+
+  const getLanguage = (): UiLanguage => options.getCurrentLanguage?.() ?? "en";
 
   const dataModelEditor = createTextAreaCodeEditorController({
     textArea: options.dataText,
@@ -179,11 +207,74 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
     options.declarationText.setSelectionRange(selectionIndex, selectionIndex, "forward");
   };
 
+  const handleDataSyntaxPointerDown = (event: PointerEvent): void => {
+    // Error display moved to metrics panel, no longer need pointer handling
+  };
+
   const updateDeclarations = (): void => {
     const raw = declarationEditor.getText();
     currentDeclarations = parseDeclarations(raw);
     renderDeclarationSyntax(raw, currentDeclarations.errors, options.declarationSyntax, options.declarationText.scrollTop, options.declarationText.scrollLeft);
     options.onDeclarationsChanged?.(currentDeclarations);
+  };
+
+  const updateDataSyntax = (): void => {
+    if (!options.dataSyntax) {
+      return;
+    }
+    const raw = dataModelEditor.getText();
+    const lines = raw.split("\n");
+    const lastLines = lastDataText.split("\n");
+
+    // Detect which lines have changed by comparing old and new lines
+    const changedLineNumbers = new Set<number>();
+    for (let i = 0; i < Math.max(lines.length, lastLines.length); i++) {
+      if (lines[i] !== lastLines[i]) {
+        changedLineNumbers.add(i + 1); // 1-indexed
+      }
+    }
+
+    // Remove errors from changed lines (user fixed them by editing)
+    const cleanedErrors = currentDataFormatErrors.filter((error) => {
+      const affectedLines = error.lines ?? [error.line];
+      
+      // Remove if all affected lines no longer exist
+      if (affectedLines.every((line) => line < 1 || line > lines.length)) {
+        return false;
+      }
+      
+      // Remove if any affected line was changed by the user (they might have fixed the error)
+      if (affectedLines.some((line) => changedLineNumbers.has(line))) {
+        return false;
+      }
+
+      return true;
+    });
+
+    currentDataFormatErrors = cleanedErrors;
+    lastDataText = raw;
+    
+    renderDataSyntax(raw, options.dataSyntax, options.dataText.scrollTop, options.dataText.scrollLeft);
+    updateDataMetrics();
+  };
+
+  const updateDataMetrics = (): void => {
+    if (currentDataFormatErrors.length === 0) {
+      options.metrics.textContent = "";
+      return;
+    }
+
+    const localize = (key: string): string => t(getLanguage(), key as any);
+    const errorMessages = currentDataFormatErrors
+      .map((error) => {
+        const message = formatErrorMessage(error, localize);
+        const rows = error.lines ?? [error.line];
+        const rowLabel = rows.length === 1 ? `Row ${rows[0]}` : `Rows ${rows.join(", ")}`;
+        return `<span style="color: red;">${escapeHtml(rowLabel)}: ${escapeHtml(message)}</span>`;
+      })
+      .join(" | ");
+
+    options.metrics.innerHTML = errorMessages;
   };
 
   const updateVisibility = (): void => {
@@ -238,13 +329,24 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
     updateDeclarations();
   });
 
+  // Event-Listener für Daten-Syntax-Rendering
+  options.dataText.addEventListener("input", () => {
+    updateDataSyntax();
+  });
+
   options.declarationSyntax.addEventListener("pointerdown", handleDeclarationSyntaxPointerDown);
+
+  if (options.dataSyntax) {
+    options.dataSyntax.addEventListener("pointerdown", handleDataSyntaxPointerDown);
+  }
 
   if (options.declarationText.value.trim().length === 0) {
     declarationEditor.setText(DEFAULT_DECLARATION_TEXT);
   }
 
   updateDeclarations();
+  updateDataSyntax();
+  lastDataText = dataModelEditor.getText();
   updateVisibility();
   applyMode();
 
@@ -254,6 +356,8 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
     },
     setDataText: (value) => {
       dataModelEditor.setText(value);
+      lastDataText = value;
+      updateDataSyntax();
     },
     getDataText: () => dataModelEditor.getText(),
     setDeclarationText: (value) => {
@@ -270,5 +374,11 @@ export const createDataPanelController = (options: DataPanelControllerOptions): 
     },
     getMode: () => mode,
     getDeclarations: () => currentDeclarations,
+    setDataFormatErrors: (errors) => {
+      currentDataFormatErrors = errors;
+      lastDataText = dataModelEditor.getText();
+      updateDataSyntax();
+      options.onDataFormatErrorsChanged?.(errors);
+    },
   };
 };

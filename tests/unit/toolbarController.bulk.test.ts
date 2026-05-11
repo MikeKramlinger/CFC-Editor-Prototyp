@@ -120,12 +120,17 @@ describe("ToolbarController bulk create", () => {
 
     const inputText = "raw-import-text";
     const normalizedText = "normalized-export-text";
-    const parsedGraph = { version: "1.0", nodes: [], connections: [] };
+    const parsedGraph = { version: "1.0", nodes: [], connections: [], declarations: "PROGRAM CFC\nVAR\nEND_VAR" };
     const setDataText = vi.fn();
 
     options.getCurrentAdapter = () => ({
       serialize: () => normalizedText,
-      deserialize: () => parsedGraph,
+      deserialize: () => ({
+        ...parsedGraph,
+        graph: parsedGraph,
+        errors: [],
+        isValid: true,
+      }),
       id: "json",
       label: "JSON",
       fileExtension: "json",

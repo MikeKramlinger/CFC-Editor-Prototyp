@@ -5,8 +5,11 @@ import {
   type CfcNode,
   type CfcNodeType,
 } from "../model.js";
-import type { CfcFormatAdapter } from "./types.js";
+import type { CfcFormatAdapter, DeserializeResult } from "./types.js";
+import { createDeserializeResult, createFormatError, createFormatErrorWithFallback } from "./errors.js";
 import {
+  collectOrderedNodeValidationErrors,
+  collectDuplicateGroupedErrors,
   buildOrderedNodesFromRaw,
   buildValidConnectionsFromRaw,
   canOmitPortReference,
@@ -26,6 +29,8 @@ interface ParsedNodeDraft {
   label: string;
   typeName?: string;
   metadata: NodeMetadata;
+  invalidMetadataKeys: string[];
+  missingRequiredKeys: string[];
   lineNumber: number;
 }
 
@@ -65,41 +70,78 @@ const quoteIfNeeded = (value: string, forbiddenFragments: string[]): string => {
 const toFiniteNumber = (value: string): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
-    throw new Error(`Ungültiger Zahlenwert: ${value}`);
+    const e = new Error(`Invalid numeric value: ${value}`);
+    (e as any).messageKey = "formatErrorInvalidNumber";
+    throw e;
   }
   return parsed;
 };
 
-const parseMetadata = (raw: string, lineNumber: number): NodeMetadata => {
+const parseMetadata = (raw: string, lineNumber: number): { metadata: NodeMetadata; invalidMetadataKeys: string[] } => {
   const pairs = raw.split(",").map((part) => part.trim()).filter((part) => part.length > 0);
   const meta: Partial<NodeMetadata> = {};
+  const invalidMetadataKeys: string[] = [];
 
   for (const pair of pairs) {
-    const match = pair.match(/^([a-zA-Z]+)\s*:\s*(-?\d+(?:\.\d+)?)$/);
+    const match = pair.match(/^([a-zA-Z]+)\s*:\s*(.+)$/);
     if (!match) {
-      throw new Error(`Ungültige Metadaten-Syntax in Zeile ${lineNumber}: "${pair}"`);
+      const e = new Error(`Invalid metadata syntax: ${pair}`);
+      (e as any).messageKey = "formatErrorInvalidMetadata";
+      (e as any).lineNumber = lineNumber;
+      throw e;
     }
 
     const key = (match[1] ?? "").toLowerCase();
-    const value = toFiniteNumber(match[2] ?? "0");
+    const rawValue = (match[2] ?? "").trim();
 
-    if (key === "o" || key === "x" || key === "y") {
+    if (key === "o") {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+        const e = new Error(`Ungültige executionOrder: "${rawValue}"`);
+        (e as any).messageKey = "formatErrorInvalidExecutionOrder";
+        (e as any).lineNumber = lineNumber;
+        throw e;
+      }
       meta[key] = value as never;
       continue;
     }
 
-    throw new Error(`Unbekannter Metadaten-Schlüssel in Zeile ${lineNumber}: "${key}"`);
+    if (key === "x" || key === "y") {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value) || !Number.isInteger(value)) {
+        const e = new Error(`Ungültige Koordinate ${key}: "${rawValue}" ist keine ganze Zahl`);
+        (e as any).messageKey = "formatErrorInvalidCoordinates";
+        (e as any).lineNumber = lineNumber;
+        throw e;
+      }
+      if (value < 0) {
+        const e = new Error(`Ungültige Koordinate ${key}: "${rawValue}" ist negativ`);
+        (e as any).messageKey = "formatErrorInvalidCoordinates";
+        (e as any).lineNumber = lineNumber;
+        throw e;
+      }
+      meta[key] = value as never;
+      continue;
+    }
+
+    invalidMetadataKeys.push(key);
   }
 
   // x and y are required; o is optional and defaults to 0
   if (typeof meta.x !== "number" || typeof meta.y !== "number") {
-    throw new Error(`Metadaten in Zeile ${lineNumber} muessen x und y enthalten.`);
+    const e = new Error(`Metadata must contain x and y`);
+    (e as any).messageKey = "formatErrorMissingCoordinates";
+    (e as any).lineNumber = lineNumber;
+    throw e;
   }
 
   return {
-    o: typeof meta.o === "number" ? meta.o : 0,
-    x: meta.x,
-    y: meta.y,
+    metadata: {
+      o: typeof meta.o === "number" ? meta.o : 0,
+      x: meta.x,
+      y: meta.y,
+    },
+    invalidMetadataKeys,
   };
 };
 
@@ -119,51 +161,51 @@ const parseBoxContent = (content: string): [label: string, typeName?: string] =>
   return [label, typeName];
 };
 
-const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, "id" | "metadata" | "lineNumber"> => {
+const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, "id" | "metadata" | "lineNumber"> & { invalidMetadataKeys?: string[] } => {
   let match = body.match(/^\[\/\*\s*([\s\S]*?)\s*\*\/\]$/);
   if (match) {
-    return { type: "comment", label: parseMaybeQuotedText(match[1] ?? "") };
+    return { type: "comment", label: parseMaybeQuotedText(match[1] ?? ""), invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   match = body.match(/^\[\*\s*([\s\S]*?)\s*\*\]$/);
   if (match) {
-    return { type: "comment", label: parseMaybeQuotedText(match[1] ?? "") };
+    return { type: "comment", label: parseMaybeQuotedText(match[1] ?? ""), invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   match = body.match(/^\[\/\s*([\s\S]*?)\s*\/\]$/);
   if (match) {
-    return { type: "input", label: parseMaybeQuotedText(match[1] ?? "") };
+    return { type: "input", label: parseMaybeQuotedText(match[1] ?? ""), invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   match = body.match(/^\[\\\s*([\s\S]*?)\s*\\\]$/);
   if (match) {
-    return { type: "output", label: parseMaybeQuotedText(match[1] ?? "") };
+    return { type: "output", label: parseMaybeQuotedText(match[1] ?? ""), invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   match = body.match(/^\[\+([^\]]+)\]$/);
   if (match) {
     const content = (match[1] ?? "").trim();
     const [label, typeName] = parseBoxContent(content);
-    return { type: "box-en-eno", label, typeName };
+    return { type: "box-en-eno", label, typeName, invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   match = body.match(/^\{\{\s*([\s\S]*?)\s*\}\}$/);
   if (match) {
-    return { type: "label", label: parseMaybeQuotedText(match[1] ?? "") };
+    return { type: "label", label: parseMaybeQuotedText(match[1] ?? ""), invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   match = body.match(/^\{\s*([\s\S]*?)\s*\}$/);
   if (match) {
-    return { type: "label", label: parseMaybeQuotedText(match[1] ?? "") };
+    return { type: "label", label: parseMaybeQuotedText(match[1] ?? ""), invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   if (/^\(\(\s*RETURN\s*\)\)$/i.test(body)) {
-    return { type: "return", label: "RETURN" };
+    return { type: "return", label: "RETURN", invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   match = body.match(/^\(\s*([\s\S]*?)\s*\)$/);
   if (match) {
-    return { type: "jump", label: parseMaybeQuotedText(match[1] ?? "") };
+    return { type: "jump", label: parseMaybeQuotedText(match[1] ?? ""), invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   match = body.match(/^\[\[\s*([CS])\s*:\s*([^\]]+)\]\]$/i);
@@ -172,28 +214,34 @@ const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, 
     return {
       type: mode === "C" ? "composer" : "selector",
       label: (match[2] ?? "").trim(),
+      invalidMetadataKeys: [],
+      missingRequiredKeys: [],
     };
   }
 
   match = body.match(/^>\s*([\s\S]*?)\s*\]$/);
   if (match) {
-    return { type: "connection-mark-source", label: parseMaybeQuotedText(match[1] ?? "") };
+    return { type: "connection-mark-source", label: parseMaybeQuotedText(match[1] ?? ""), invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   match = body.match(/^\[\s*([\s\S]*?)\s*<$/);
   if (match) {
-    return { type: "connection-mark-sink", label: parseMaybeQuotedText(match[1] ?? "") };
+    return { type: "connection-mark-sink", label: parseMaybeQuotedText(match[1] ?? ""), invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
   match = body.match(/^\[\[\s*T\s*:\s*([a-z0-9-]+)\s*\|\s*([\s\S]*?)\s*\]\]$/i);
   if (match) {
     const typeRaw = (match[1] ?? "").toLowerCase();
     if (!isCfcNodeType(typeRaw)) {
-      throw new Error(`Unbekannter Node-Typ in Zeile ${lineNumber}: "${typeRaw}"`);
+      const e = new Error(`Unknown node type: ${typeRaw}`);
+      (e as any).messageKey = "formatErrorUnknownNodeType";
+      throw e;
     }
     return {
       type: typeRaw,
       label: parseMaybeQuotedText(match[2] ?? ""),
+      invalidMetadataKeys: [],
+      missingRequiredKeys: [],
     };
   }
 
@@ -201,38 +249,75 @@ const parseNodeBody = (body: string, lineNumber: number): Omit<ParsedNodeDraft, 
   if (match) {
     const content = (match[1] ?? "").trim();
     const [label, typeName] = parseBoxContent(content);
-    return { type: "box", label, typeName };
+    return { type: "box", label, typeName, invalidMetadataKeys: [], missingRequiredKeys: [] };
   }
 
-  throw new Error(`Unbekannte Node-Syntax in Zeile ${lineNumber}: "${body}"`);
+  const e = new Error(`Unknown node syntax: ${body}`);
+  (e as any).messageKey = "formatErrorInvalidNodeSyntax";
+  throw e;
 };
 
 const parseNodeLine = (line: string, lineNumber: number): ParsedNodeDraft => {
   const metadataMatch = line.match(/\{([^{}]+)\}\s*$/);
   if (!metadataMatch || metadataMatch.index === undefined) {
-    throw new Error(`Node in Zeile ${lineNumber} benoetigt einen Metadatenblock {o, x, y}.`);
+    const e = new Error(`Node requires metadata block {o, x, y}.`);
+    (e as any).messageKey = "formatErrorMissingMetadata";
+    throw e;
   }
 
-  const metadata = parseMetadata(metadataMatch[1] ?? "", lineNumber);
+  const parsedMetadata = parseMetadata(metadataMatch[1] ?? "", lineNumber);
   const definition = line.slice(0, metadataMatch.index).trim();
   const definitionMatch = definition.match(/^([A-Za-z_][A-Za-z0-9_-]*)\s*(.+)$/);
   if (!definitionMatch) {
-    throw new Error(`Ungueltige Node-Definition in Zeile ${lineNumber}.`);
+    const e = new Error(`Invalid node definition.`);
+    (e as any).messageKey = "formatErrorInvalidNodeSyntax";
+    throw e;
   }
 
   const id = definitionMatch[1] ?? "";
   const body = (definitionMatch[2] ?? "").trim();
   if (body.length === 0) {
-    throw new Error(`Fehlende Node-Syntax in Zeile ${lineNumber}.`);
+    const e = new Error(`Missing node syntax.`);
+    (e as any).messageKey = "formatErrorMissingNodeBody";
+    throw e;
   }
 
   const parsedBody = parseNodeBody(body, lineNumber);
+  if (parsedBody.type !== "return" && parsedBody.label.trim().length === 0) {
+    const e = new Error(`Fehlende Attribute für Knotentyp "${parsedBody.type}" (label)`);
+    (e as any).messageKey = "formatErrorMissingAttributes";
+    (e as any).lineNumber = lineNumber;
+    throw e;
+  }
+  const missingRequiredKeys: string[] = [];
+  const requiresExecutionOrder = (
+    parsedBody.type === "output"
+    || parsedBody.type === "box"
+    || parsedBody.type === "box-en-eno"
+    || parsedBody.type === "jump"
+    || parsedBody.type === "label"
+    || parsedBody.type === "return"
+    || parsedBody.type === "composer"
+  );
+  if (requiresExecutionOrder && parsedMetadata.metadata.o === 0) {
+    missingRequiredKeys.push("executionOrder");
+  }
+  if ((parsedBody.type === "box" || parsedBody.type === "box-en-eno") && (!parsedBody.typeName || parsedBody.typeName.trim().length === 0)) {
+    missingRequiredKeys.push("typeName");
+  }
+  if (parsedBody.type === "box" || parsedBody.type === "box-en-eno") {
+    if (!parsedBody.label || parsedBody.label.trim().length === 0) {
+      missingRequiredKeys.push("instanceName");
+    }
+  }
   return {
     id,
     type: parsedBody.type,
     label: parsedBody.label,
     typeName: parsedBody.typeName,
-    metadata,
+    metadata: parsedMetadata.metadata,
+    invalidMetadataKeys: parsedMetadata.invalidMetadataKeys,
+    missingRequiredKeys,
     lineNumber,
   };
 };
@@ -240,13 +325,17 @@ const parseNodeLine = (line: string, lineNumber: number): ParsedNodeDraft => {
 const parseConnectionLine = (line: string, lineNumber: number): ParsedConnectionDraft => {
   const match = line.match(/^(?:([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*)?(.+?)\s*-->\s*(.+)$/);
   if (!match) {
-    throw new Error(`Ungueltige Verbindungs-Syntax in Zeile ${lineNumber}.`);
+    const e = new Error(`Invalid connection syntax.`);
+    (e as any).messageKey = "formatErrorInvalidConnectionSyntax";
+    throw e;
   }
 
   const fromRaw = (match[2] ?? "").trim();
   const toRaw = (match[3] ?? "").trim();
   if (fromRaw.length === 0 || toRaw.length === 0) {
-    throw new Error(`Ungueltige Verbindungs-Syntax in Zeile ${lineNumber}.`);
+    const e = new Error(`Invalid connection syntax.`);
+    (e as any).messageKey = "formatErrorInvalidConnectionSyntax";
+    throw e;
   }
 
   return {
@@ -265,7 +354,10 @@ const parseEndpoint = (
 ): { nodeId: string; port: string } => {
   const match = raw.trim().match(/^([A-Za-z_][A-Za-z0-9_-]*)(?:\.(.+))?$/);
   if (!match) {
-    throw new Error(`Ungueltiger Endpunkt in Zeile ${lineNumber}: "${raw}"`);
+    const e = new Error(`Invalid endpoint: ${raw}`);
+    (e as any).messageKey = "formatErrorInvalidEndpoint";
+    (e as any).lineNumber = lineNumber;
+    throw e;
   }
 
   const nodeId = match[1] ?? "";
@@ -273,10 +365,16 @@ const parseEndpoint = (
   const nodeType = nodeTypeById.get(nodeId);
   const pin = pinRaw.startsWith("!") ? pinRaw.slice(1) : pinRaw;
   if (!nodeType && pin.length === 0) {
-    throw new Error(`Ungueltiger Endpunkt in Zeile ${lineNumber}: "${raw}"`);
+    const e = new Error(`Invalid endpoint: ${raw}`);
+    (e as any).messageKey = "formatErrorInvalidEndpoint";
+    (e as any).lineNumber = lineNumber;
+    throw e;
   }
   if (nodeType && pin.length === 0 && !canOmitPortReference(nodeType, kind)) {
-    throw new Error(`Ungueltiger Endpunkt in Zeile ${lineNumber}: "${raw}"`);
+    const e = new Error(`Invalid endpoint: ${raw}`);
+    (e as any).messageKey = "formatErrorInvalidEndpoint";
+    (e as any).lineNumber = lineNumber;
+    throw e;
   }
   const index = parsePinIndex(pin, kind, nodeType);
 
@@ -452,13 +550,14 @@ const toConnectionEndpointSyntax = (
   return `${nodeId}.${pin}`;
 };
 
-const parseDslGraph = (raw: string): CfcGraph => {
+const parseDslGraphWithErrors = (raw: string): DeserializeResult => {
   const normalized = normalizeLineEndings(raw);
   const lines = normalized.split("\n");
 
   const graph = createEmptyGraph();
   const nodeDrafts: ParsedNodeDraft[] = [];
   const connectionDrafts: ParsedConnectionDraft[] = [];
+  const errors: import("./errors.js").FormatError[] = [];
 
   let headerFound = false;
   let declarationsStartIndex = -1;
@@ -488,62 +587,132 @@ const parseDslGraph = (raw: string): CfcGraph => {
 
     if (!headerFound) {
       if (trimmed !== HEADER) {
-        throw new Error(`Ungueltiger DSL-Header in Zeile ${lineNumber}. Erwartet: "${HEADER}".`);
+        errors.push(createFormatErrorWithFallback(lineNumber, "formatErrorInvalidDslHeader", `Invalid DSL header. Expected: '${HEADER}'.`));
+      } else {
+        headerFound = true;
       }
-      headerFound = true;
       return;
     }
 
     if (trimmed.includes("-->")) {
-      connectionDrafts.push(parseConnectionLine(trimmed, lineNumber));
+      try {
+        connectionDrafts.push(parseConnectionLine(trimmed, lineNumber));
+      } catch (e) {
+        const key = (e as any)?.messageKey ?? "formatErrorInvalidConnectionSyntax";
+        const start = (e as any)?.startIndex;
+        const length = (e as any)?.length;
+        errors.push(createFormatErrorWithFallback(lineNumber, key, (e as Error).message, start, length));
+      }
       return;
     }
 
-    nodeDrafts.push(parseNodeLine(trimmed, lineNumber));
+    try {
+      const nodeDraft = parseNodeLine(trimmed, lineNumber);
+      if (nodeDraft.invalidMetadataKeys.length > 0) {
+        nodeDraft.invalidMetadataKeys.forEach((invalidKey) => {
+          errors.push(createFormatErrorWithFallback(lineNumber, "formatErrorInvalidMetadataKey", `Unknown metadata key (${invalidKey})`));
+        });
+      }
+      if (nodeDraft.missingRequiredKeys.length > 0) {
+        const detail = nodeDraft.missingRequiredKeys.join(", ");
+        errors.push(createFormatErrorWithFallback(lineNumber, "formatErrorMissingAttributes", `Fehlende Attribute für Knotentyp "${nodeDraft.type}" (${detail})`));
+      }
+      nodeDrafts.push(nodeDraft);
+    } catch (e) {
+      const key = (e as any)?.messageKey ?? "formatErrorInvalidNodeSyntax";
+      const start = (e as any)?.startIndex;
+      const length = (e as any)?.length;
+      const errorLineNumber = (e as any)?.lineNumber ?? lineNumber;
+      if (key === "formatErrorMissingCoordinates") {
+        errors.push(createFormatErrorWithFallback(errorLineNumber, "formatErrorMissingAttributes", "Fehlende Attribute für Knotentyp (x, y)"));
+      } else {
+        errors.push(createFormatErrorWithFallback(errorLineNumber, key, (e as Error).message, start, length));
+      }
+    }
   });
 
   if (!headerFound) {
-    throw new Error(`Ungueltiger DSL-Header. Erwartet: "${HEADER}".`);
+    errors.push(createFormatErrorWithFallback(1, "formatErrorInvalidDslHeader", `Invalid DSL header. Expected: '${HEADER}'.`));
   }
 
-  const nodesRaw = nodeDrafts.map((draft) => {
-    const entry: Record<string, unknown> = {
-      id: draft.id,
-      type: draft.type,
-      label: draft.label,
-      x: draft.metadata.x,
-      y: draft.metadata.y,
-    };
+  try {
+    const nodesRaw = nodeDrafts.map((draft) => {
+      const entry: Record<string, unknown> = {
+        id: draft.id,
+        type: draft.type,
+        label: draft.label,
+        x: draft.metadata.x,
+        y: draft.metadata.y,
+      };
 
-    if (draft.metadata.o > 0) {
-      entry.executionOrder = Math.floor(draft.metadata.o);
+      if (draft.metadata.o > 0) {
+        entry.executionOrder = Math.floor(draft.metadata.o);
+      }
+
+      if (draft.typeName) {
+        entry.typeName = draft.typeName;
+      }
+
+      return entry;
+    });
+
+    const duplicateInstanceNameErrors = collectDuplicateGroupedErrors(
+      nodeDrafts
+        .filter((draft) => draft.type === "box" || draft.type === "box-en-eno")
+        .map((draft) => ({ key: draft.label.trim(), line: draft.lineNumber }))
+        .filter((entry) => entry.key.length > 0),
+      "formatErrorDuplicateInstanceName",
+      (key) => `Instanzname mehrfach belegt (${key})`,
+    );
+
+    const validationErrors = collectOrderedNodeValidationErrors(
+      nodeDrafts.map((draft) => ({
+        node: {
+          id: draft.id,
+          type: draft.type,
+          label: draft.label,
+          x: draft.metadata.x,
+          y: draft.metadata.y,
+          width: 0,
+          height: 0,
+          ...(draft.typeName ? { typeName: draft.typeName } : {}),
+        } as CfcNode,
+        executionOrder: draft.metadata.o > 0 ? Math.floor(draft.metadata.o) : draft.lineNumber,
+        hasExplicitExecutionOrder: draft.metadata.o > 0,
+        sourceIndex: draft.lineNumber - 1,
+      })),
+    );
+    validationErrors.push(...duplicateInstanceNameErrors);
+    errors.push(...validationErrors);
+
+    graph.nodes = buildOrderedNodesFromRaw(nodesRaw);
+
+    const nodeIds = new Set(graph.nodes.map((node) => node.id));
+    const nodeTypeById = new Map(graph.nodes.map((node) => [node.id, node.type]));
+    const connectionsRaw = connectionDrafts.map((draft, index) => {
+      const from = parseEndpoint(draft.fromRaw, "output", nodeTypeById, draft.lineNumber);
+      const to = parseEndpoint(draft.toRaw, "input", nodeTypeById, draft.lineNumber);
+
+      return {
+        id: draft.id ?? `C${index + 1}`,
+        fromNodeId: from.nodeId,
+        fromPin: from.port,
+        toNodeId: to.nodeId,
+        toPin: to.port,
+      };
+    });
+
+    graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
+  } catch (e) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    const isValidationError = errorMessage.includes("id bereits belegt") || errorMessage.includes("executionOrder");
+    if (!isValidationError) {
+      const key = errorMessage.includes("Koordinaten") || errorMessage.includes("coordinates") || errorMessage.includes("Coordinate")
+        ? "formatErrorInvalidCoordinates"
+        : "formatErrorInvalidNodeSyntax";
+      errors.push(createFormatErrorWithFallback(1, key, errorMessage));
     }
-
-    if (draft.typeName) {
-      entry.typeName = draft.typeName;
-    }
-
-    return entry;
-  });
-
-  graph.nodes = buildOrderedNodesFromRaw(nodesRaw);
-
-  const nodeIds = new Set(graph.nodes.map((node) => node.id));
-  const nodeTypeById = new Map(graph.nodes.map((node) => [node.id, node.type]));
-  const connectionsRaw = connectionDrafts.map((draft, index) => {
-    const from = parseEndpoint(draft.fromRaw, "output", nodeTypeById, draft.lineNumber);
-    const to = parseEndpoint(draft.toRaw, "input", nodeTypeById, draft.lineNumber);
-
-    return {
-      id: draft.id ?? `C${index + 1}`,
-      fromNodeId: from.nodeId,
-      fromPin: from.port,
-      toNodeId: to.nodeId,
-      toPin: to.port,
-    };
-  });
-
-  graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
+  }
 
   // Extrahiere Deklarationen, wenn sie vorhanden sind
   if (declarationsStartIndex >= 0 && declarationsStartIndex < lines.length) {
@@ -554,7 +723,16 @@ const parseDslGraph = (raw: string): CfcGraph => {
     }
   }
 
-  return graph;
+  return createDeserializeResult(graph, errors);
+};
+
+const parseDslGraph = (raw: string): CfcGraph => {
+  const result = parseDslGraphWithErrors(raw);
+  if (!result.isValid && result.errors.length > 0) {
+    const firstError = result.errors[0]!;
+    throw new Error(`${firstError.messageKey}: Line ${firstError.line}`);
+  }
+  return result.graph;
 };
 
 export const cfcDslFormat: CfcFormatAdapter = {
@@ -606,15 +784,7 @@ export const cfcDslFormat: CfcFormatAdapter = {
 
     return `${lines.join("\n")}\n`;
   },
-  deserialize(raw: string): CfcGraph {
-    try {
-      const graph = parseDslGraph(raw);
-      return graph;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`Ungueltige CFC-DSL: ${error.message}`);
-      }
-      throw new Error("Ungueltige CFC-DSL");
-    }
+  deserialize(raw: string): DeserializeResult {
+    return parseDslGraphWithErrors(raw);
   },
 };

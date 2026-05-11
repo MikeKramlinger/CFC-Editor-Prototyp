@@ -5,14 +5,43 @@ import {
   type CfcNodeType,
 } from "../model.js";
 import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
-import type { CfcFormatAdapter } from "./types.js";
-import { buildOrderedNodesFromRaw, buildValidConnectionsFromRaw, deriveDeclarationsFromNodes, serializePort, getImportLabelValue, getExportLabelEntry } from "./shared.js";
+import type { CfcFormatAdapter, DeserializeResult } from "./types.js";
+import { createDeserializeResult, createFormatErrorWithFallback } from "./errors.js";
+import { buildOrderedNodesFromRaw, buildValidConnectionsFromRaw, collectOrderedNodeValidationErrors, deriveDeclarationsFromNodes, serializePort, getImportLabelValue, getExportLabelEntry, getExportLabelFieldName, parseNodeEntry, sortParsedNodeEntries, collectDuplicateGroupedErrors, getCommonRequiredNodeAttributeSpecs, getRequiredNodeAttributeSpecs } from "./shared.js";
 import { parseDeclarations, generateDeclarations } from "../declarations/parser.js";
+
+const findLineNumberByOccurrence = (raw: string, token: string, occurrence: number, fallbackLine: number): number => {
+  const lines = raw.split(/\r?\n/);
+  let seen = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index]?.includes(token)) {
+      if (seen === occurrence) {
+        return index + 1;
+      }
+      seen += 1;
+    }
+  }
+  return fallbackLine;
+};
 
 const requireAttr = (element: Element, name: string): string => {
   const value = element.getAttribute(name);
   if (!value) {
     throw new Error(`Fehlendes Attribut: ${name}`);
+  }
+  return value;
+};
+
+const requireNumberAttr = (element: Element, name: string): number => {
+  const raw = element.getAttribute(name);
+  if (!raw) {
+    throw new Error(`Fehlendes Attribut: ${name}`);
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    const error = new Error(`Ungültiges Zahlenformat für ${name}: "${raw}"`);
+    (error as Error & { messageKey?: string }).messageKey = "formatErrorInvalidCoordinates";
+    throw error;
   }
   return value;
 };
@@ -69,7 +98,8 @@ export const xmlFormat: CfcFormatAdapter = {
       const nodeElement = documentRoot.createElement("node");
       nodeElement.setAttribute("id", node.id);
       nodeElement.setAttribute("type", node.type);
-      if (isExecutionOrderedNode(node)) {
+      const shouldEmitOrder = isExecutionOrderedNode(node) && (node.__metadata?.hadExecutionOrder ?? true) !== false;
+      if (shouldEmitOrder) {
         const nodeExecutionOrder = typeof node.executionOrder === "number" ? Math.max(1, Math.floor(node.executionOrder)) : executionOrderIndex + 1;
         nodeElement.setAttribute("executionOrder", String(nodeExecutionOrder));
         executionOrderIndex++;
@@ -116,87 +146,257 @@ export const xmlFormat: CfcFormatAdapter = {
     const serialized = new XMLSerializer().serializeToString(documentRoot).replace(/^<\?xml[^>]*>\s*/i, "");
     return `<?xml version="1.0" encoding="UTF-8"?>\n${formatXml(serialized)}`;
   },
-  deserialize(raw: string): CfcGraph {
-    const xml = new DOMParser().parseFromString(raw, "application/xml");
-    if (xml.querySelector("parsererror")) {
-      throw new Error("Ungültiges XML");
-    }
-
-    const graph = createEmptyGraph();
-    const cfc = xml.getElementsByTagNameNS("*", "cfcEditor").item(0);
-    if (!cfc) {
-      return graph;
-    }
-
-    graph.version = cfc.getAttribute("version") ?? "1.0";
-
-    const nodeElements = cfc.getElementsByTagNameNS("*", "node");
-    const nodesRaw = Array.from(nodeElements).map((nodeElement, sourceIndex) => {
-      const nodeType = (nodeElement.getAttribute("type") ?? DEFAULT_NODE_TYPE) as CfcNodeType;
-      const record: Record<string, unknown> = {
-        label: nodeElement.getAttribute("label") ?? undefined,
-        expression: nodeElement.getAttribute("expression") ?? undefined,
-        instanceName: nodeElement.getAttribute("instanceName") ?? undefined,
-        declarationName: nodeElement.getAttribute("declarationName") ?? undefined,
-        content: nodeElement.getAttribute("content") ?? undefined,
-        text: nodeElement.getAttribute("text") ?? undefined,
-        signal: nodeElement.getAttribute("signal") ?? undefined,
-      };
-
-      const nodeRaw: Record<string, unknown> = {
-        id: requireAttr(nodeElement, "id"),
-        type: nodeType,
-        label: getImportLabelValue(record, nodeType),
-        x: parseNumberAttr(nodeElement, "x"),
-        y: parseNumberAttr(nodeElement, "y"),
-      };
-      if (nodeElement.hasAttribute("executionOrder")) {
-        nodeRaw.executionOrder = Math.max(1, Math.floor(parseNumberAttr(nodeElement, "executionOrder", sourceIndex + 1)));
+  deserialize(raw: string): DeserializeResult {
+    try {
+      const xml = new DOMParser().parseFromString(raw, "application/xml");
+      if (xml.querySelector("parsererror")) {
+        throw new Error("Invalid XML");
       }
-      const typeName = nodeElement.getAttribute("typeName");
-      if (typeName) {
-        nodeRaw.typeName = typeName;
+
+      const graph = createEmptyGraph();
+      const cfc = xml.getElementsByTagNameNS("*", "cfcEditor").item(0);
+      if (!cfc) {
+        return createDeserializeResult(graph, []);
       }
-      const declarationName = nodeElement.getAttribute("declarationName");
-      if (declarationName) {
-        nodeRaw.label = declarationName;
+
+      graph.version = cfc.getAttribute("version") ?? "1.0";
+
+      const nodeElements = cfc.getElementsByTagNameNS("*", "node");
+      const idCounts = new Map<string, number>();
+      const parseErrors: import("./errors.js").FormatError[] = [];
+      const allowedNodeAttributes = new Set([
+        "id",
+        "type",
+        "label",
+        "x",
+        "y",
+        "executionOrder",
+        "typeName",
+        "declarationName",
+        "instanceName",
+        "expression",
+        "content",
+        "text",
+        "signal",
+      ]);
+      const nodesRaw = Array.from(nodeElements).flatMap((nodeElement, sourceIndex) => {
+        try {
+          const nodeId = nodeElement.getAttribute("id") ?? `N${sourceIndex + 1}`;
+          const duplicateIndex = idCounts.get(nodeId) ?? 0;
+          const lineNumber = findLineNumberByOccurrence(raw, `id="${nodeId}"`, duplicateIndex, sourceIndex + 1);
+
+          const invalidAttributes = Array.from(nodeElement.attributes)
+            .map((attribute) => attribute.name)
+            .filter((attributeName) => !allowedNodeAttributes.has(attributeName));
+          if (invalidAttributes.length > 0) {
+            parseErrors.push(
+              createFormatErrorWithFallback(
+                lineNumber,
+                "formatErrorInvalidAttributes",
+                `Ungültige Attribute (${invalidAttributes.join(", ")})`,
+              ),
+            );
+          }
+
+          const hasTypeAttr = (nodeElement.getAttribute("type") ?? "").trim().length > 0;
+          const nodeType = (nodeElement.getAttribute("type") ?? DEFAULT_NODE_TYPE) as CfcNodeType;
+          const missingKeys: string[] = [];
+          const commonSpecs = getCommonRequiredNodeAttributeSpecs();
+          commonSpecs.forEach((spec) => {
+            const hasValue = spec.candidates.some((key) => {
+              const requiredValue = nodeElement.getAttribute(key);
+              return requiredValue && requiredValue.trim().length > 0;
+            });
+            if (!hasValue) {
+              missingKeys.push(spec.field);
+            }
+          });
+
+          if (hasTypeAttr) {
+            const requiredSpecs = getRequiredNodeAttributeSpecs(nodeType);
+            requiredSpecs.forEach((spec) => {
+              const hasValue = spec.candidates.some((key) => {
+                const requiredValue = nodeElement.getAttribute(key);
+                return requiredValue && requiredValue.trim().length > 0;
+              });
+              if (!hasValue) {
+                missingKeys.push(spec.field);
+              }
+            });
+          }
+
+          if (missingKeys.length > 0) {
+            const detail = missingKeys.join(", ");
+            const message = hasTypeAttr
+              ? `Fehlende Attribute für Knotentyp "${nodeType}" (${detail})`
+              : `Fehlende Attribute für Knotentyp (${detail})`;
+            parseErrors.push(
+              createFormatErrorWithFallback(
+                lineNumber,
+                "formatErrorMissingAttributes",
+                message,
+              ),
+            );
+          }
+          const fieldName = getExportLabelFieldName(nodeType);
+          const record: Record<string, unknown> = {
+            label: nodeElement.getAttribute("label") ?? undefined,
+            expression: nodeElement.getAttribute("expression") ?? undefined,
+            instanceName: nodeElement.getAttribute("instanceName") ?? undefined,
+            declarationName: nodeElement.getAttribute("declarationName") ?? undefined,
+            content: nodeElement.getAttribute("content") ?? undefined,
+            text: nodeElement.getAttribute("text") ?? undefined,
+            signal: nodeElement.getAttribute("signal") ?? undefined,
+            __metadata: {
+              hadExportLabelField: nodeElement.hasAttribute(fieldName),
+            },
+          };
+
+          const nodeRaw: Record<string, unknown> = {
+            id: requireAttr(nodeElement, "id"),
+            type: nodeType,
+            label: getImportLabelValue(record, nodeType),
+            x: requireNumberAttr(nodeElement, "x"),
+            y: requireNumberAttr(nodeElement, "y"),
+          };
+          if (!(nodeRaw as any).__metadata) (nodeRaw as any).__metadata = {};
+          (nodeRaw as any).__metadata.hadExecutionOrder = nodeElement.hasAttribute("executionOrder");
+          if (nodeElement.hasAttribute("executionOrder")) {
+            const rawExecutionOrder = nodeElement.getAttribute("executionOrder") ?? "";
+            const executionOrder = Number(rawExecutionOrder);
+            if (!Number.isFinite(executionOrder) || !Number.isInteger(executionOrder) || executionOrder < 1) {
+              parseErrors.push(
+                createFormatErrorWithFallback(
+                  lineNumber,
+                  "formatErrorInvalidExecutionOrder",
+                  `Ungültige executionOrder: "${rawExecutionOrder}"`,
+                ),
+              );
+            } else {
+              nodeRaw.executionOrder = executionOrder;
+            }
+          }
+          const typeName = nodeElement.getAttribute("typeName");
+          if (typeName) {
+            nodeRaw.typeName = typeName;
+          }
+          const declarationName = nodeElement.getAttribute("declarationName");
+          if (declarationName) {
+            nodeRaw.label = declarationName;
+          }
+          const nodeIdFromRaw = String(nodeRaw.id ?? `N${sourceIndex + 1}`);
+          nodeRaw.lineNumber = lineNumber;
+          idCounts.set(nodeIdFromRaw, duplicateIndex + 1);
+          return [nodeRaw];
+        } catch (error) {
+          const lineNumber = (error as any)?.line ?? findLineNumberByOccurrence(raw, `id="${nodeElement.getAttribute("id") ?? ""}"`, 0, sourceIndex + 1);
+          const messageKey = (error as any)?.messageKey ?? "formatErrorInvalidNodeSyntax";
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          parseErrors.push(createFormatErrorWithFallback(lineNumber, messageKey, errorMessage));
+          return [];
+        }
+      });
+
+      const validationEntries: Array<import("./shared.js").ParsedNodeEntry> = [];
+      const validationErrors = [
+        ...parseErrors,
+        ...nodesRaw.flatMap((entry, index) => {
+          try {
+            const parsedEntry = parseNodeEntry(entry, index);
+            if (!parsedEntry) {
+              return [];
+            }
+            parsedEntry.lineNumber = Number(entry.lineNumber) || index + 1;
+            validationEntries.push(parsedEntry);
+            return [];
+          } catch (error) {
+            const messageKey = (error as any)?.messageKey ?? "formatErrorInvalidNodeSyntax";
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const lineNumber = Number((entry as any)?.lineNumber) || index + 1;
+            return [createFormatErrorWithFallback(lineNumber, messageKey, errorMessage)];
+          }
+        }),
+      ];
+
+      validationErrors.push(...collectOrderedNodeValidationErrors(validationEntries));
+      validationErrors.push(
+        ...collectDuplicateGroupedErrors(
+          validationEntries
+            .filter((entry) => entry.node.type === "box" || entry.node.type === "box-en-eno")
+            .map((entry) => ({ key: entry.node.label.trim(), line: entry.lineNumber ?? entry.sourceIndex + 1 }))
+            .filter((entry) => entry.key.length > 0),
+          "formatErrorDuplicateInstanceName",
+          (key) => `Instanzname mehrfach belegt (${key})`,
+        ),
+      );
+
+      const connectionIdOccurrences = new Map<string, number>();
+      const connectionIdEntries = Array.from(cfc.getElementsByTagNameNS("*", "connection"))
+        .map((connectionElement, index) => {
+          const connectionId = requireAttr(connectionElement, "id");
+          const occurrence = connectionIdOccurrences.get(connectionId) ?? 0;
+          connectionIdOccurrences.set(connectionId, occurrence + 1);
+          return {
+            key: connectionId,
+            line: findLineNumberByOccurrence(raw, `id="${connectionId}"`, occurrence, index + 1),
+          };
+        });
+      validationErrors.push(
+        ...collectDuplicateGroupedErrors(
+          connectionIdEntries,
+          "formatErrorDuplicateConnectionId",
+          (key) => `Connection-ID mehrfach belegt (${key})`,
+        ),
+      );
+
+      if (validationErrors.length > 0) {
+        graph.nodes = sortParsedNodeEntries(validationEntries).map((entry) => entry.node);
+        return createDeserializeResult(graph, validationErrors);
       }
-      return nodeRaw;
-    });
 
-    graph.nodes = buildOrderedNodesFromRaw(nodesRaw);
+      graph.nodes = buildOrderedNodesFromRaw(nodesRaw);
 
-    const connectionElements = cfc.getElementsByTagNameNS("*", "connection");
-    const connectionsRaw = Array.from(connectionElements).map((connectionElement) => {
-      const rawFromPin = connectionElement.getAttribute("fromPin") ?? "output:0";
-      const rawToPin = connectionElement.getAttribute("toPin") ?? "input:0";
-      return {
-        id: requireAttr(connectionElement, "id"),
-        fromNodeId: requireAttr(connectionElement, "from"),
-        fromPin: rawFromPin === "output" ? "output:0" : rawFromPin,
-        toNodeId: requireAttr(connectionElement, "to"),
-        toPin: rawToPin === "input" ? "input:0" : rawToPin,
-      };
-    });
+      const connectionElements = cfc.getElementsByTagNameNS("*", "connection");
+      const connectionsRaw = Array.from(connectionElements).map((connectionElement) => {
+        const rawFromPin = connectionElement.getAttribute("fromPin") ?? "output:0";
+        const rawToPin = connectionElement.getAttribute("toPin") ?? "input:0";
+        return {
+          id: requireAttr(connectionElement, "id"),
+          fromNodeId: requireAttr(connectionElement, "from"),
+          fromPin: rawFromPin === "output" ? "output:0" : rawFromPin,
+          toNodeId: requireAttr(connectionElement, "to"),
+          toPin: rawToPin === "input" ? "input:0" : rawToPin,
+        };
+      });
 
-    const nodeIds = new Set(graph.nodes.map((node) => node.id));
-    graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
+      const nodeIds = new Set(graph.nodes.map((node) => node.id));
+      graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
 
-    const declElements = cfc.getElementsByTagNameNS("*", "declarations");
-    const declEl = declElements && declElements.length > 0 ? declElements.item(0) : null;
-    const variableElements = declEl ? Array.from(declEl.getElementsByTagName("variable")) : [];
+      const declElements = cfc.getElementsByTagNameNS("*", "declarations");
+      const declEl = declElements && declElements.length > 0 ? declElements.item(0) : null;
+      const variableElements = declEl ? Array.from(declEl.getElementsByTagName("variable")) : [];
 
-    if (variableElements.length > 0) {
-      const variables = variableElements.map((ve) => ({
-        name: ve.getAttribute("name") ?? "",
-        type: ve.getAttribute("type") ?? ""
-      }));
-      
-      graph.declarations = generateDeclarations(variables as any);
-    } else {
-      graph.declarations = deriveDeclarationsFromNodes(graph.nodes);
+      if (variableElements.length > 0) {
+        const variables = variableElements.map((ve) => ({
+          name: ve.getAttribute("name") ?? "",
+          type: ve.getAttribute("type") ?? ""
+        }));
+        
+        graph.declarations = generateDeclarations(variables as any);
+      } else {
+        graph.declarations = deriveDeclarationsFromNodes(graph.nodes);
+      }
+
+      return createDeserializeResult(graph, []);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return createDeserializeResult(createEmptyGraph(), [
+        {
+          line: 1,
+          messageKey: "formatErrorInvalidDataFormat",
+          message: errorMessage,
+        },
+      ]);
     }
-
-    return graph;
   },
 };

@@ -5,7 +5,8 @@ import { getNodeTemplateByType } from "../../src/model.js";
 describe("CFC-ST resizing", () => {
   it("resizes BOX nodes to fit long typeName on deserialize", async () => {
     const raw = `declaration:\n\ncfc:\n\nBOX(MyVeryLongDerivedTypeNameThatShouldForceWidth)`;
-    const graph = cfcStFormat.deserialize(raw);
+    const result = cfcStFormat.deserialize(raw);
+    const graph = result.graph;
     expect(graph.nodes.length).toBeGreaterThan(0);
     const node = graph.nodes[0];
     const template = getNodeTemplateByType(node.type);

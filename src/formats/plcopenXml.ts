@@ -8,8 +8,9 @@ import {
 } from "../model.js";
 import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
 import { generateDeclarations, isElementaryType, parseDeclarations, type Variable } from "../declarations/index.js";
-import type { CfcFormatAdapter } from "./types.js";
-import { deriveDeclarationsFromNodes } from "./shared.js";
+import type { CfcFormatAdapter, DeserializeResult } from "./types.js";
+import { createDeserializeResult, type FormatError } from "./errors.js";
+import { collectDuplicateGroupedErrors, deriveDeclarationsFromNodes } from "./shared.js";
 import { fitNodeWidthToLabel } from "../core/editor/nodeSizing.js";
 
 const NAMESPACE = "http://www.plcopen.org/xml/tc6_0200";
@@ -33,6 +34,7 @@ interface ParsedOgNode {
   inputNames: string[];
   outputNames: string[];
   incomingRefs: IncomingRef[];
+  validationErrors: FormatError[];
 }
 
 interface ConnectorRef {
@@ -258,12 +260,22 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
     return null;
   }
 
+  const line = sourceIndex + 1;
   const position = getPosition(element);
-  const executionOrder = Math.max(1, parseNumberAttr(element, "executionOrderId", sourceIndex + 1));
+  const rawExecutionOrder = element.getAttribute("executionOrderId");
+  let executionOrder = sourceIndex + 1;
+  if (rawExecutionOrder !== null) {
+    const parsedExecutionOrder = Number(rawExecutionOrder);
+    if (!Number.isFinite(parsedExecutionOrder) || !Number.isInteger(parsedExecutionOrder) || parsedExecutionOrder < 1) {
+    } else {
+      executionOrder = parsedExecutionOrder;
+    }
+  }
 
   if (element.localName === "inVariable") {
     const template = getNodeTemplateByType("input");
-    const label = (getDirectChildByLocalName(element, "expression")?.textContent ?? "Input").trim() || "Input";
+    const expression = (getDirectChildByLocalName(element, "expression")?.textContent ?? "").trim();
+    const label = expression || "Input";
     return {
       localId,
       executionOrder,
@@ -271,6 +283,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       inputNames: [],
       outputNames: ["Out1"],
       incomingRefs: [],
+      validationErrors: [],
       node: {
         id: `N${localId}`,
         type: "input",
@@ -285,7 +298,8 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
 
   if (element.localName === "outVariable") {
     const template = getNodeTemplateByType("output");
-    const label = (getDirectChildByLocalName(element, "expression")?.textContent ?? "Output").trim() || "Output";
+    const expression = (getDirectChildByLocalName(element, "expression")?.textContent ?? "").trim();
+    const label = expression || "Output";
     return {
       localId,
       executionOrder,
@@ -293,6 +307,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       inputNames: ["In1"],
       outputNames: [],
       incomingRefs: parseIncomingSingleRef(element),
+      validationErrors: [],
       node: {
         id: `N${localId}`,
         type: "output",
@@ -315,6 +330,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       inputNames: [],
       outputNames: [],
       incomingRefs: [],
+      validationErrors: [],
       node: {
         id: `N${localId}`,
         type: "comment",
@@ -329,7 +345,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
 
   if (element.localName === "jump") {
     const template = getNodeTemplateByType("jump");
-    const label = (element.getAttribute("label") ?? "Jump").trim() || "Jump";
+    const label = (element.getAttribute("label") ?? "").trim();
     return {
       localId,
       executionOrder,
@@ -337,6 +353,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       inputNames: ["In1"],
       outputNames: [],
       incomingRefs: parseIncomingSingleRef(element),
+      validationErrors: [],
       node: {
         id: `N${localId}`,
         type: "jump",
@@ -351,7 +368,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
 
   if (element.localName === "label") {
     const template = getNodeTemplateByType("label");
-    const label = (element.getAttribute("label") ?? "Label").trim() || "Label";
+    const label = (element.getAttribute("label") ?? "").trim();
     return {
       localId,
       executionOrder,
@@ -359,6 +376,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       inputNames: [],
       outputNames: [],
       incomingRefs: [],
+      validationErrors: [],
       node: {
         id: `N${localId}`,
         type: "label",
@@ -380,6 +398,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       inputNames: ["In1"],
       outputNames: [],
       incomingRefs: parseIncomingSingleRef(element),
+      validationErrors: [],
       node: {
         id: `N${localId}`,
         type: "return",
@@ -400,12 +419,12 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
     const hasEnEno = inputNames.includes("EN") && outputNames.includes("ENO");
     const type: CfcNodeType = hasEnEno ? "box-en-eno" : "box";
     const template = getNodeTemplateByType(type);
-    const typeNameAttr = (element.getAttribute("typeName") ?? "Box").trim() || "Box";
+    const typeNameAttr = (element.getAttribute("typeName") ?? "").trim();
     const instanceNameAttr = (element.getAttribute("instanceName") ?? "").trim();
     const node: CfcNode = {
       id: `N${localId}`,
       type,
-      label: instanceNameAttr || typeNameAttr,
+      label: instanceNameAttr || typeNameAttr || "Box",
       x: position.x,
       y: position.y,
       width: template.width,
@@ -419,6 +438,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       inputNames,
       outputNames,
       incomingRefs: collectIncomingRefsForVariables(inputVariables),
+      validationErrors: [],
       node,
     };
   }
@@ -442,6 +462,7 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       inputNames,
       outputNames,
       incomingRefs: collectIncomingRefsForVariables(inputVariables),
+      validationErrors: [],
       node: {
         id: `N${localId}`,
         type,
@@ -551,36 +572,6 @@ const createCallTypeData = (doc: Document, value: ConnectionMode): Element => {
   callType.textContent = value;
   data.append(callType);
   return data;
-};
-
-const makeObjectId = (): string => {
-  if (globalThis.crypto && "randomUUID" in globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
-    return globalThis.crypto.randomUUID();
-  }
-  return "00000000-0000-4000-8000-000000000000";
-};
-
-const readPlcopenObjectId = (xml: Document): string | undefined => {
-  const dataElements = Array.from(xml.getElementsByTagNameNS("*", "data"));
-  const objectIdData = dataElements.find((data) => data.getAttribute("name") === OBJECT_ID_DATA_NAME);
-  const objectIdValue = objectIdData
-    ? Array.from(objectIdData.children)
-      .find((child) => child.localName === "ObjectId")
-      ?.textContent
-      ?.trim()
-    : undefined;
-  if (objectIdValue) {
-    return objectIdValue;
-  }
-
-  const projectStructureData = dataElements.find((data) => data.getAttribute("name") === PROJECT_STRUCTURE_DATA_NAME);
-  const projectStructureObject = projectStructureData
-    ? Array.from(projectStructureData.getElementsByTagNameNS("*", "Object")).find((object) =>
-      (object.getAttribute("ObjectId") ?? "").trim().length > 0,
-    )
-    : undefined;
-  const fallbackObjectId = projectStructureObject?.getAttribute("ObjectId")?.trim();
-  return fallbackObjectId || undefined;
 };
 
 export const plcopenXmlFormat: CfcFormatAdapter = {
@@ -1052,80 +1043,68 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     serialized = serialized.replace(/\s*\/\>/g, ' />');
     return `<?xml version="1.0" encoding="utf-8"?>\n${formatXml(serialized)}`;
   },
-  deserialize(raw: string): CfcGraph {
-    const xml = new DOMParser().parseFromString(raw, "application/xml");
-    if (xml.querySelector("parsererror")) {
-      throw new Error("Ungültiges XML");
-    }
+  deserialize(raw: string): DeserializeResult {
+    try {
+      const xml = new DOMParser().parseFromString(raw, "application/xml");
+      if (xml.querySelector("parsererror")) throw new Error("Ungültiges XML");
 
-    const graph = createEmptyGraph();
-    const cfc = xml.getElementsByTagNameNS("*", "CFC").item(0);
-    if (!cfc) {
-      return graph;
-    }
+      const graph = createEmptyGraph();
+      const cfc = xml.getElementsByTagNameNS("*", "CFC").item(0);
+      if (!cfc) return createDeserializeResult(graph, []);
 
-    const connectors = parseConnectorRefs(cfc);
-    const parsedNodes = Array.from(cfc.children)
-      .map((child, index) => parseCfcNodeElement(child, index))
-      .filter((entry): entry is ParsedOgNode => entry !== null);
+      const connectors = parseConnectorRefs(cfc);
 
-    const byLocalId = new Map(parsedNodes.map((entry) => [entry.localId, entry]));
+      const parsedNodes = Array.from(cfc.children)
+        .map((child, index) => {
+          try {
+            return parseCfcNodeElement(child, index);
+          } catch {
+            return null;
+          }
+        })
+        .filter((entry): entry is ParsedOgNode => entry !== null);
 
-    parsedNodes
-      .sort((left, right) => {
-        if (left.executionOrder !== right.executionOrder) {
-          return left.executionOrder - right.executionOrder;
-        }
-        return left.sourceIndex - right.sourceIndex;
-      })
-      .forEach((entry) => {
+      const byLocalId = new Map(parsedNodes.map((entry) => [entry.localId, entry]));
+
+      parsedNodes.sort((a, b) => (a.executionOrder !== b.executionOrder ? a.executionOrder - b.executionOrder : a.sourceIndex - b.sourceIndex));
+
+      for (const entry of parsedNodes) {
         fitNodeWidthToLabel(entry.node);
         graph.nodes.push(entry.node);
-      });
-
-    let connectionSerial = 1;
-    parsedNodes.forEach((targetNode) => {
-      targetNode.incomingRefs.forEach((incoming) => {
-        const resolved = resolveSourceRef(incoming.refLocalId, incoming.sourceFormalParameter, connectors);
-        if (!resolved) {
-          return;
-        }
-        const sourceNode = byLocalId.get(resolved.localId);
-        if (!sourceNode) {
-          return;
-        }
-
-        const outputIndex = Math.max(0, sourceNode.outputNames.indexOf(resolved.formalParameter));
-        const inputIndex = Math.max(0, incoming.targetInputIndex);
-
-        graph.connections.push({
-          id: `C${connectionSerial}`,
-          fromNodeId: sourceNode.node.id,
-          fromPin: `output:${outputIndex}`,
-          toNodeId: targetNode.node.id,
-          toPin: `input:${inputIndex}`,
-        });
-        connectionSerial += 1;
-      });
-    });
-
-    graph.nodes = graph.nodes.map((node) => {
-      if (isCfcNodeType(node.type)) {
-        return node;
       }
-      return {
-        ...node,
-        type: "box",
-      };
-    });
 
-    graph.declarations = parseInterfaceDeclarations(xml) ?? deriveDeclarationsFromNodes(graph.nodes);
+      let connectionSerial = 1;
+      for (const targetNode of parsedNodes) {
+        for (const incoming of targetNode.incomingRefs) {
+          const resolved = resolveSourceRef(incoming.refLocalId, incoming.sourceFormalParameter, connectors);
+          if (!resolved) continue;
+          const sourceEntry = byLocalId.get(resolved.localId);
+          if (!sourceEntry) continue;
 
-    const creationDateTime = xml.getElementsByTagNameNS("*", "fileHeader").item(0)?.getAttribute("creationDateTime")?.trim() || undefined;
-    if (creationDateTime) {
-      graph.creationDateTime = creationDateTime;
+          const outputIndex = Math.max(0, sourceEntry.outputNames.indexOf(resolved.formalParameter));
+          const inputIndex = Math.max(0, incoming.targetInputIndex);
+
+          graph.connections.push({
+            id: `C${connectionSerial++}`,
+            fromNodeId: sourceEntry.node.id,
+            fromPin: `output:${outputIndex}`,
+            toNodeId: targetNode.node.id,
+            toPin: `input:${inputIndex}`,
+          });
+        }
+      }
+
+      graph.nodes = graph.nodes.map((node) => (isCfcNodeType(node.type) ? node : { ...node, type: "box" }));
+
+      graph.declarations = parseInterfaceDeclarations(xml) ?? deriveDeclarationsFromNodes(graph.nodes);
+
+      const creationDateTime = xml.getElementsByTagNameNS("*", "fileHeader").item(0)?.getAttribute("creationDateTime")?.trim();
+      if (creationDateTime) graph.creationDateTime = creationDateTime;
+
+      return createDeserializeResult(graph, []);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return createDeserializeResult(createEmptyGraph(), [{ line: 1, messageKey: "formatErrorInvalidXml", message: errorMessage }]);
     }
-
-    return graph;
   },
 };

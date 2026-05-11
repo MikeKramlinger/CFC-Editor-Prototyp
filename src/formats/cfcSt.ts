@@ -1,15 +1,17 @@
-import type { CfcFormatAdapter } from "./types.js";
+import type { CfcFormatAdapter, DeserializeResult } from "./types.js";
+import { createDeserializeResult, type FormatError } from "./errors.js";
 import { CfcGraph, CfcNode, CfcConnection, createEmptyGraph, CfcNodeType, getNodeTemplateByType } from "../model.js";
 import { fitNodeWidthToLabel } from "../core/editor/nodeSizing.js";
 import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
-import { canOmitPortReference, serializePort } from "./shared.js";
+import { canOmitPortReference, serializePort, buildOrderedNodesFromRaw, collectOrderedNodeValidationErrors, collectDuplicateGroupedErrors } from "./shared.js";
 
 class CfcSTParser {
-  parse(text: string): CfcGraph {
+  parse(text: string): { graph: CfcGraph; errors: FormatError[] } {
     const lines = text.split(/\r?\n/);
     const graph = createEmptyGraph();
     const declLines: string[] = [];
     const connectionDrafts: Array<{ operator: "=>" | "->"; left: string; right: string }> = [];
+    const errors: FormatError[] = [];
 
     type State = "INIT" | "DECL" | "CFC";
     let state: State = "INIT";
@@ -55,6 +57,14 @@ class CfcSTParser {
 
     const trimComma = (s: string) => s.replace(/,$/, "");
 
+    const pushParseError = (lineNumber: number, messageKey: string, message: string): void => {
+      errors.push({
+        line: lineNumber,
+        messageKey,
+        message,
+      });
+    };
+
     for (let i = 0; i < lines.length; i++) {
       const raw = lines[i] ?? "";
       const line = raw.trim();
@@ -95,6 +105,37 @@ class CfcSTParser {
         // meta block begin/end
         if (line === "{") continue;
         if (line === "}") {
+          if (activeNode) {
+            const type = activeNode.type;
+            const requiresExecutionOrder = (
+              type === "output"
+              || type === "box"
+              || type === "box-en-eno"
+              || type === "jump"
+              || type === "label"
+              || type === "return"
+              || type === "composer"
+            );
+            const missing: string[] = [];
+            if (!(activeNode.__metadata?.hadId ?? false)) {
+              missing.push("id");
+            }
+            if (!(activeNode.__metadata?.hadX ?? false)) {
+              missing.push("x");
+            }
+            if (!(activeNode.__metadata?.hadY ?? false)) {
+              missing.push("y");
+            }
+            if (requiresExecutionOrder && !(activeNode.__metadata?.hadExecutionOrder ?? false)) {
+              missing.push("executionOrder");
+            }
+            if ((type === "box" || type === "box-en-eno") && (!activeNode.typeName || activeNode.typeName.trim().length === 0)) {
+              missing.push("typeName");
+            }
+            if (missing.length > 0) {
+              pushParseError(i + 1, "formatErrorMissingAttributes", `Fehlende Attribute für Knotentyp "${type}" (${missing.join(", ")})`);
+            }
+          }
           activeNode = null;
           continue;
         }
@@ -109,13 +150,60 @@ class CfcSTParser {
             // remove optional quotes
             if (/^".*"$/.test(val)) val = val.slice(1, -1);
             const num = Number(val);
-            if (key === "@id") activeNode.id = val;
-            else if ((key === "@order" || key === "@executionOrder") && isExecutionOrderedNode(activeNode)) activeNode.executionOrder = isNaN(num) ? undefined : Math.max(1, Math.floor(num));
-            else if (key === "@x") activeNode.x = isNaN(num) ? 0 : num;
-            else if (key === "@y") activeNode.y = isNaN(num) ? 0 : num;
-             else if (key === "@h") activeNode.height = isNaN(num) ? activeNode.height : num;
+            if (key === "@id") {
+              if (!activeNode.__metadata) activeNode.__metadata = {};
+              activeNode.__metadata.hadId = true;
+              activeNode.id = val;
+            }
+            else if (key === "@order" || key === "@executionOrder") {
+              if (!activeNode.__metadata) activeNode.__metadata = {};
+              activeNode.__metadata.hadExecutionOrder = true;
+              if (isExecutionOrderedNode(activeNode)) {
+                if (!Number.isFinite(num) || !Number.isInteger(num) || num < 1) {
+                  pushParseError(i + 1, "formatErrorInvalidExecutionOrder", `Ungültige executionOrder: "${val}"`);
+                } else {
+                  activeNode.executionOrder = num;
+                }
+              }
+              // Ignore executionOrder for nodes that don't support it
+            }
+            else if (key === "@x") {
+              if (!activeNode.__metadata) activeNode.__metadata = {};
+              activeNode.__metadata.hadX = true;
+              if (!Number.isFinite(num) || !Number.isInteger(num)) {
+                pushParseError(i + 1, "formatErrorInvalidCoordinates", `Ungültige Koordinate x: "${val}" ist keine ganze Zahl`);
+              } else if (num < 0) {
+                pushParseError(i + 1, "formatErrorInvalidCoordinates", `Ungültige Koordinate x: "${num}" ist negativ`);
+              } else {
+                activeNode.x = num;
+              }
+            }
+            else if (key === "@y") {
+              if (!activeNode.__metadata) activeNode.__metadata = {};
+              activeNode.__metadata.hadY = true;
+              if (!Number.isFinite(num) || !Number.isInteger(num)) {
+                pushParseError(i + 1, "formatErrorInvalidCoordinates", `Ungültige Koordinate y: "${val}" ist keine ganze Zahl`);
+              } else if (num < 0) {
+                pushParseError(i + 1, "formatErrorInvalidCoordinates", `Ungültige Koordinate y: "${num}" ist negativ`);
+              } else {
+                activeNode.y = num;
+              }
+            }
+            else if (key === "@h") {
+              if (isNaN(num)) {
+                pushParseError(i + 1, "formatErrorInvalidAttributes", `Ungültige Höhe: "${val}" ist keine Zahl`);
+              } else if (num < 0) {
+                pushParseError(i + 1, "formatErrorInvalidAttributes", `Ungültige Höhe: "${num}" ist negativ`);
+              } else {
+                activeNode.height = num;
+              }
+            }
             else {
-              // ignore other metadata for now
+              pushParseError(
+                i + 1,
+                "formatErrorInvalidMetadataKey",
+                `Unbekanntes Metadaten-Attribut (${key})`,
+              );
             }
           }
           continue;
@@ -166,7 +254,13 @@ class CfcSTParser {
               case "CM_SOURCE": baseType = "connection-mark-source"; parsedParam = param || undefined; break;
               case "CM_SINK": baseType = "connection-mark-sink"; parsedParam = param || undefined; break;
               case "COMMENT": baseType = "comment"; parsedParam = param || undefined; break;
-              default: baseType = "box"; parsedParam = param || undefined; break;
+              default:
+                {
+                  const error = new Error(`Unknown node type: ${t}`);
+                  (error as Error & { messageKey?: string; lineNumber?: number }).messageKey = "formatErrorUnknownNodeType";
+                  (error as Error & { messageKey?: string; lineNumber?: number }).lineNumber = i + 1;
+                  throw error;
+                }
             }
 
             const template = getNodeTemplateByType(baseType as CfcNodeType);
@@ -176,13 +270,23 @@ class CfcSTParser {
             let finalTypeName: string | undefined = undefined;
 
             if (baseType === "box" || baseType === "box-en-eno") {
-              // BOX keeps the left identifier as label; parentheses are the typeName
-              finalLabel = hasColon ? leftName : "";
-              finalTypeName = parsedParam ? parsedParam.trim() : undefined;
+              // BOX: support both `Name : BOX(Type)` (leftName as label) and `BOX(Label)` (parentheses as label)
+              if (hasColon) {
+                finalLabel = leftName;
+                finalTypeName = parsedParam ? parsedParam.trim() : undefined;
+              } else {
+                finalLabel = parsedParam ? parsedParam.trim() : "";
+                finalTypeName = undefined;
+              }
             } else if (baseType === "comment") {
-              // comment keeps payload in typeName (strip quotes if present)
-              finalLabel = hasColon ? leftName : "";
-              finalTypeName = parsedParam ? parsedParam.trim().replace(/^"(.*)"$/, "$1") : (hasColon ? leftName : undefined);
+              // comment: if colon form used, leftName is the label; otherwise use the parentheses payload as label
+              if (hasColon) {
+                finalLabel = leftName;
+                finalTypeName = parsedParam ? parsedParam.trim().replace(/^"(.*)"$/, "$1") : undefined;
+              } else {
+                finalLabel = parsedParam ? parsedParam.trim().replace(/^"(.*)"$/, "$1") : "";
+                finalTypeName = undefined;
+              }
             } else {
               if (hasColon) {
                 // legacy form `Name : TYPE(param)` -> keep Name as label, preserve param
@@ -195,7 +299,14 @@ class CfcSTParser {
               }
             }
 
-            const node: CfcNode = {
+            if (baseType !== "return" && finalLabel.trim().length === 0) {
+              const error = new Error(`Fehlende Attribute für Knotentyp "${baseType}" (label)`);
+              (error as Error & { messageKey?: string; lineNumber?: number }).messageKey = "formatErrorMissingAttributes";
+              (error as Error & { messageKey?: string; lineNumber?: number }).lineNumber = i + 1;
+              throw error;
+            }
+
+            const node: CfcNode & { lineNumber?: number } = {
               id: `node${nextNodeIndex++}`,
               type: baseType as CfcNodeType,
               label: finalLabel,
@@ -203,7 +314,15 @@ class CfcSTParser {
               y: 0,
               width: template.width,
               height: template.height,
-              typeName: finalTypeName ? finalTypeName.trim() : undefined
+              typeName: finalTypeName ? finalTypeName.trim() : undefined,
+              lineNumber: i + 1,
+              __metadata: {
+                hadExportLabelField: finalLabel.trim().length > 0,
+                hadExecutionOrder: false,
+                hadId: false,
+                hadX: false,
+                hadY: false,
+              },
             };
 
             pushNode(node);
@@ -288,7 +407,7 @@ class CfcSTParser {
     // Ensure all nodes are properly sized to fit their content
     graph.nodes.forEach(node => fitNodeWidthToLabel(node));
     
-    return graph;
+    return { graph, errors };
   }
 }
 
@@ -352,25 +471,36 @@ export const cfcStFormat: CfcFormatAdapter = {
       let header = "";
 
       if (node.type === "box" || node.type === "box-en-eno") {
-        const labelPart = node.label && node.label.trim() ? `${node.label} : ` : "";
+        const preserveLabel = (node.__metadata?.hadExportLabelField ?? true) !== false;
+        const labelPart = preserveLabel && node.label && node.label.trim() ? `${node.label} : ` : "";
         header = `${labelPart}${token}(${node.typeName || ""})`;
       } else if (node.type === "comment") {
-        const payload = node.typeName ?? node.label ?? "";
+        const preserveLabel = (node.__metadata?.hadExportLabelField ?? true) !== false;
+        const payload = preserveLabel ? (node.typeName ?? node.label ?? "") : "";
         header = `COMMENT("${payload}")`;
       } else if (node.type === "return") {
         header = token;
       } else {
-        const inner = node.label && node.label.trim() ? node.label : (node.typeName || "");
+        const preserveLabel = (node.__metadata?.hadExportLabelField ?? true) !== false;
+        const inner = preserveLabel ? (node.label && node.label.trim() ? node.label : (node.typeName || "")) : (node.typeName || "");
         header = `${token}(${inner})`;
       }
 
       result += `${header} {\n`;
-      result += `  @id = ${node.id},\n`;
-      if (executionOrder !== null) {
-        result += `  @order = ${executionOrder},\n`;
+      if ((node.__metadata?.hadId ?? true) !== false) {
+        result += `  @id = ${node.id},\n`;
       }
-      result += `  @x = ${node.x},\n`;
-      result += `  @y = ${node.y}\n`;
+      if (executionOrder !== null) {
+        if ((node.__metadata?.hadExecutionOrder ?? true) !== false) {
+          result += `  @order = ${executionOrder},\n`;
+        }
+      }
+      if ((node.__metadata?.hadX ?? true) !== false) {
+        result += `  @x = ${node.x},\n`;
+      }
+      if ((node.__metadata?.hadY ?? true) !== false) {
+        result += `  @y = ${node.y}\n`;
+      }
       result += `}\n\n`;
     });
 
@@ -395,8 +525,82 @@ export const cfcStFormat: CfcFormatAdapter = {
     return result.trim() + "\n";
   },
 
-  deserialize: (raw: string): CfcGraph => {
-    const parser = new CfcSTParser();
-    return parser.parse(raw);
-  }
+  deserialize: (raw: string): DeserializeResult => {
+    try {
+      const parser = new CfcSTParser();
+      const parsed = parser.parse(raw);
+      const graph = parsed.graph;
+
+      const validationErrors = collectOrderedNodeValidationErrors(
+        graph.nodes.map((node, index) => ({
+          node,
+          executionOrder: typeof node.executionOrder === "number" ? node.executionOrder : index + 1,
+          hasExplicitExecutionOrder: typeof node.executionOrder === "number",
+          sourceIndex: index,
+          lineNumber: (node as CfcNode & { lineNumber?: number }).lineNumber,
+        })),
+      );
+
+      validationErrors.unshift(...parsed.errors);
+
+      const duplicateInstanceNameErrors = collectDuplicateGroupedErrors(
+        graph.nodes
+          .filter((node) => node.type === "box" || node.type === "box-en-eno")
+          .map((node) => ({
+            key: node.label.trim(),
+            line: (node as CfcNode & { lineNumber?: number }).lineNumber ?? 1,
+          }))
+          .filter((entry) => entry.key.length > 0),
+        "formatErrorDuplicateInstanceName",
+        (key) => `Instanzname mehrfach belegt (${key})`,
+      );
+      validationErrors.push(...duplicateInstanceNameErrors);
+
+      if (validationErrors.length > 0) {
+        return createDeserializeResult(graph, validationErrors);
+      }
+      
+      // Collect errors for validation
+      const errors: Array<{ line: number; messageKey: string; message?: string }> = [];
+      
+      // Validate execution order for execution-ordered nodes
+      try {
+        buildOrderedNodesFromRaw(
+          graph.nodes.map((node) => ({
+            id: node.id,
+            label: node.label,
+            type: node.type,
+            typeName: node.typeName,
+            executionOrder: node.executionOrder,
+            x: node.x,
+            y: node.y,
+          }))
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const lineNumber = (error as any)?.lineNumber ?? 1;
+        errors.push({
+          line: lineNumber,
+          messageKey: errorMessage.includes("executionOrder")
+            ? "formatErrorInvalidExecutionOrder"
+            : errorMessage.includes("Koordinaten") || errorMessage.includes("Coordinates")
+            ? "formatErrorInvalidCoordinates"
+            : (error as any)?.messageKey ?? "formatErrorInvalidDataFormat",
+          message: errorMessage,
+        });
+      }
+      
+      return createDeserializeResult(graph, errors);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const lineNumber = (error as any)?.lineNumber ?? 1;
+      return createDeserializeResult(createEmptyGraph(), [
+        {
+          line: lineNumber,
+          messageKey: (error as any)?.messageKey ?? "formatErrorInvalidDataFormat",
+          message: errorMessage,
+        },
+      ]);
+    }
+  },
 };
