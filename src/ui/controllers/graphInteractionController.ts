@@ -17,6 +17,8 @@ export interface PanState {
   moved: boolean;
 }
 
+const MARQUEE_DRAG_THRESHOLD_PX = 3;
+
 interface GraphInteractionControllerOptions {
   canvas: HTMLDivElement;
   graphLayer: HTMLDivElement;
@@ -111,8 +113,6 @@ export const installGraphInteractionController = (options: GraphInteractionContr
       currentY: options.clientToGraphPxY(event.clientY),
       additive: options.isAdditiveSelection(event),
     });
-    options.updateSelectionBox();
-    options.applyMarqueeSelection();
   });
 
   options.canvas.addEventListener("pointermove", (event) => {
@@ -126,8 +126,13 @@ export const installGraphInteractionController = (options: GraphInteractionContr
     if (marqueeSelection) {
       marqueeSelection.currentX = options.clientToGraphPxX(event.clientX);
       marqueeSelection.currentY = options.clientToGraphPxY(event.clientY);
-      options.updateSelectionBox();
-      options.applyMarqueeSelection();
+      const movedEnough =
+        Math.abs(marqueeSelection.currentX - marqueeSelection.startX) >= MARQUEE_DRAG_THRESHOLD_PX ||
+        Math.abs(marqueeSelection.currentY - marqueeSelection.startY) >= MARQUEE_DRAG_THRESHOLD_PX;
+      if (movedEnough) {
+        options.updateSelectionBox();
+        options.applyMarqueeSelection();
+      }
       return;
     }
 
@@ -187,12 +192,18 @@ export const installGraphInteractionController = (options: GraphInteractionContr
       options.canvas.classList.remove("is-panning");
     }
 
-    if (options.getMarqueeSelection()) {
-      options.setSkipNextCanvasClick(true);
-      options.setMarqueeSelection(null);
-      options.selectionBox.style.display = "none";
+    const marqueeSelection = options.getMarqueeSelection();
+    if (marqueeSelection) {
+      const movedEnough =
+        Math.abs(marqueeSelection.currentX - marqueeSelection.startX) >= MARQUEE_DRAG_THRESHOLD_PX ||
+        Math.abs(marqueeSelection.currentY - marqueeSelection.startY) >= MARQUEE_DRAG_THRESHOLD_PX;
+      if (movedEnough) {
+        options.setSkipNextCanvasClick(true);
+      }
     }
-
+    options.setMarqueeSelection(null);
+    options.selectionBox.style.display = "none";
+    
     options.finishConnectionDrag();
     if (options.getDragState()) {
       options.onNodeDragFinished();
@@ -214,5 +225,23 @@ export const installGraphInteractionController = (options: GraphInteractionContr
     }
     options.setDragState(null);
     options.setLastCursorUnits(null);
+  });
+
+  options.canvas.addEventListener("click", (event) => {
+    if (options.getSkipNextCanvasClick()) {
+      options.setSkipNextCanvasClick(false);
+      return;
+    }
+    if (
+      event.target === options.canvas ||
+      event.target === options.graphLayer ||
+      event.target === options.contentLayer ||
+      event.target === options.svg ||
+      event.target === options.nodeLayer
+    ) {
+      if (!options.isAdditiveSelection(event)) {
+        options.clearSelection();
+      }
+    }
   });
 };

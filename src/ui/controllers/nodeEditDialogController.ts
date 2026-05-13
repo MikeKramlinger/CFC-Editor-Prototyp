@@ -27,6 +27,7 @@ export const createNodeEditDialogController = (
   options: NodeEditDialogControllerOptions,
 ): NodeEditDialogController => {
   let activeDialog: HTMLDivElement | null = null;
+  const declarationEnabledNodeTypes = new Set(["input", "output", "box", "box-en-eno"]);
 
   const close = (): void => {
     activeDialog?.remove();
@@ -114,6 +115,7 @@ export const createNodeEditDialogController = (
       maxExecutionOrder: options.getExecutionOrderedNodeCount(),
       leftPx: nodeCenterXPx,
       topPx: nodeTopPx,
+      showDeclarationSelect: declarationEnabledNodeTypes.has(node.type),
       compatibleVariables,
       onCancel: () => {
         close();

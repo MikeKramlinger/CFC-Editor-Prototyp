@@ -13,6 +13,7 @@ export interface NodeEditDialogOptions {
   maxExecutionOrder: number;
   leftPx: number;
   topPx: number;
+  showDeclarationSelect?: boolean;
   compatibleVariables?: import("../../declarations/index.js").Variable[];
   onCancel: () => void;
   onSubmit: (payload: NodeEditDialogSubmitPayload) => void;
@@ -46,10 +47,10 @@ export const createNodeEditDialog = (options: NodeEditDialogOptions): NodeEditDi
 
   form.append(labelField);
 
-  // Deklarations-Dropdown (immer anzeigen) - keep single Name field
+  // Deklarations-Dropdown nur fuer kompatible Knotentypen
   const vars = options.compatibleVariables ?? [];
   let declarationSelect: HTMLSelectElement | null = null;
-  {
+  if (options.showDeclarationSelect) {
     const declarationField = document.createElement("label");
     declarationField.className = "cfc-node-edit-field";
     declarationField.textContent = "Declaration";
