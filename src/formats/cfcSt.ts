@@ -634,15 +634,21 @@ export const cfcStFormat: CfcFormatAdapter = {
       // Validate execution order for execution-ordered nodes
       try {
         buildOrderedNodesFromRaw(
-          graph.nodes.map((node) => ({
-            id: node.id,
-            label: node.label,
-            type: node.type,
-            typeName: node.typeName,
-            executionOrder: node.executionOrder,
-            x: node.x,
-            y: node.y,
-          }))
+          graph.nodes.map((node) => {
+            const entry: any = {
+              id: node.id,
+              label: node.label,
+              type: node.type,
+              typeName: node.typeName,
+              x: node.x,
+              y: node.y,
+            };
+            // Only include executionOrder if it's actually defined
+            if (typeof node.executionOrder === "number") {
+              entry.executionOrder = node.executionOrder;
+            }
+            return entry;
+          })
         );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
