@@ -29,6 +29,25 @@ export const doesHorizontalSegmentTouchObstacle = (
   return segMaxX >= nodeMinX && segMinX <= nodeMaxX;
 };
 
+export const doesVerticalSegmentTouchObstacle = (
+  node: RoutingObstacleNode,
+  x: number,
+  y1: number,
+  y2: number,
+): boolean => {
+  const nodeMinX = Math.floor(node.x);
+  const nodeMaxX = Math.ceil(node.x + node.width);
+  const nodeMinY = Math.floor(node.y);
+  const nodeMaxY = Math.ceil(node.y + node.height);
+  if (x < nodeMinX || x > nodeMaxX) {
+    return false;
+  }
+
+  const segMinY = Math.min(y1, y2);
+  const segMaxY = Math.max(y1, y2);
+  return segMaxY >= nodeMinY && segMinY <= nodeMaxY;
+};
+
 interface RouteState {
   x: number;
   y: number;

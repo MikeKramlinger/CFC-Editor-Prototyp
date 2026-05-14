@@ -33,7 +33,6 @@ import {
 } from "./ui/controllers/graphInteractionController.js";
 import { renderConnectionLayer } from "./ui/controllers/connectionLayerController.js";
 import { renderNodeLayer } from "./ui/controllers/nodeLayerController.js";
-import { createBezierConnectionPath, createPolylineConnectionPath } from "./ui/views/connectionRendererUi.js";
 import { createGroupDragState, type DragState } from "./core/editor/drag.js";
 import {
   createSelectionRect,
@@ -48,22 +47,24 @@ import {
   compactRouteToAnchors,
   computeOrthogonalRoute,
   doesHorizontalSegmentTouchObstacle,
+  doesVerticalSegmentTouchObstacle,
+  type GridPoint,
 } from "./core/editor/routing.js";
-import { createGraphHistory, type GraphHistory } from "./core/editor/history.js";
-import {
-  createGraphClipboard,
-  getClipboardPasteContext,
-  resolveClipboardPasteTranslation,
-  type GraphClipboard,
-} from "./core/editor/clipboard.js";
-import { fitNodeWidthToLabel } from "./core/editor/nodeSizing.js";
-import type { GridPoint } from "./core/editor/routing.js";
+import { composeManualRoutePoints, persistWaypointsFromRoutePoints } from "./core/editor/manualRouting.js";
 import {
   clampPanToPositiveArea,
   clampZoom,
   clientToGraphPx,
   computeZoomAtClient,
 } from "./core/editor/viewport.js";
+import { createGraphHistory, type GraphHistory } from "./core/editor/history.js";
+import { fitNodeWidthToLabel } from "./core/editor/nodeSizing.js";
+import {
+  createGraphClipboard,
+  type GraphClipboard,
+  getClipboardPasteContext,
+  resolveClipboardPasteTranslation,
+} from "./core/editor/clipboard.js";
 
 interface EditorOptions {
   onGraphChanged: (graph: CfcGraph) => void;
@@ -108,8 +109,18 @@ export class CfcEditor {
   private lastCursorUnits: { x: number; y: number } | null = null;
   private dragState: DragState | null = null;
   private connectionDrag: ConnectionDragState | null = null;
+  private connectionWaypointDrag: {
+    connectionId: string;
+    segmentIndex: number;
+    startPointerX: number;
+    startPointerY: number;
+    startRoutePoints: GridPoint[];
+    hasConvertedToManual: boolean;
+  } | null = null;
   private nodeEditHistoryBefore: CfcGraph | null = null;
   private dragHistoryBefore: CfcGraph | null = null;
+  private connectionWaypointHistoryBefore: CfcGraph | null = null;
+  private deferredAutoRoutingConnectionIds = new Set<string>();
   private marqueeSelection: MarqueeSelectionState | null = null;
   private panState: PanState | null = null;
   private skipNextCanvasClick = false;
@@ -234,6 +245,7 @@ export class CfcEditor {
       setConnectionDrag: (state) => {
         this.connectionDrag = state;
       },
+      getConnectionWaypointDrag: () => this.connectionWaypointDrag !== null,
       getMarqueeSelection: () => this.marqueeSelection,
       setMarqueeSelection: (state) => {
         this.marqueeSelection = state;
@@ -295,7 +307,9 @@ export class CfcEditor {
       },
       snapToGrid: this.snapToGrid.bind(this),
       clampUnitToNonNegative: this.clampUnitToNonNegative.bind(this),
-      onNodeDragFinished: this.finalizeNodeDragHistory.bind(this),
+      onNodeDragFinished: this.finalizeNodeDragHistoryOverride.bind(this),
+      moveConnectionWaypointDrag: this.moveConnectionWaypointDrag.bind(this),
+      finishConnectionWaypointDrag: this.finishConnectionWaypointDrag.bind(this),
       render: this.render.bind(this),
       emitGraphChanged: this.emitGraphChanged.bind(this),
       clearSelection: this.clearSelection.bind(this),
@@ -318,8 +332,11 @@ export class CfcEditor {
     this.selectedNodeIds.clear();
     this.selectedConnectionIds.clear();
     this.connectionDrag = null;
+    this.connectionWaypointDrag = null;
+    this.deferredAutoRoutingConnectionIds.clear();
     this.nodeEditHistoryBefore = null;
     this.dragHistoryBefore = null;
+    this.connectionWaypointHistoryBefore = null;
     this.history.clear();
     this.nodeEditDialogController.close();
     this.render();
@@ -344,6 +361,8 @@ export class CfcEditor {
     this.connectionDrag = null;
     this.dragHistoryBefore = null;
     this.nodeEditHistoryBefore = null;
+    this.connectionWaypointDrag = null;
+    this.deferredAutoRoutingConnectionIds.clear();
     this.selectedNodeIds.clear();
     this.selectedConnectionIds.clear();
     this.nodeEditDialogController.close();
@@ -365,6 +384,8 @@ export class CfcEditor {
     this.connectionDrag = null;
     this.dragHistoryBefore = null;
     this.nodeEditHistoryBefore = null;
+    this.connectionWaypointDrag = null;
+    this.deferredAutoRoutingConnectionIds.clear();
     this.selectedNodeIds.clear();
     this.selectedConnectionIds.clear();
     this.nodeEditDialogController.close();
@@ -561,6 +582,7 @@ export class CfcEditor {
     this.selectedNodeIds.clear();
     this.selectedConnectionIds.clear();
     this.connectionDrag = null;
+    this.deferredAutoRoutingConnectionIds.clear();
     this.nodeEditDialogController.close();
     this.finalizeGraphMutation(before, { bumpRoutingCache: true });
   }
@@ -588,6 +610,8 @@ export class CfcEditor {
     this.selectedNodeIds.clear();
     this.selectedConnectionIds.clear();
     this.connectionDrag = null;
+    // Clear deferred set for deleted connections
+    selectedConnectionIds.forEach((connId) => this.deferredAutoRoutingConnectionIds.delete(connId));
     this.finalizeGraphMutation(before, { bumpRoutingCache: true });
     this.options.onStatus?.("Ausgewählte Elemente gelöscht.");
   }
@@ -1034,6 +1058,7 @@ export class CfcEditor {
       fallbackOverlaySvg: this.fallbackOverlaySvg,
       connections: this.graph.connections,
       selectedConnectionIds: this.selectedConnectionIds,
+      deferredAutoRoutingConnectionIds: this.deferredAutoRoutingConnectionIds,
       isInteractionLocked: this.isInteractionLocked,
       routingMode: this.routingMode,
       connectionDrag: this.connectionDrag,
@@ -1041,7 +1066,8 @@ export class CfcEditor {
       getOutputPortPoint: this.getOutputPortPoint.bind(this),
       getInputPortPoint: this.getInputPortPoint.bind(this),
       unitToPx: this.unitToPx.bind(this),
-      createAStarConnectionPath: this.createAStarConnectionPath.bind(this),
+      getManualRoutePoints: this.getManualRoutePoints.bind(this),
+      getAStarRoutePoints: this.getAStarRoutePoints.bind(this),
       canDropConnection: (fromNodeId, fromPin, toNodeId, toPin) => {
         return (
           getConnectionCreationBlockReason(this.graph.connections, {
@@ -1057,6 +1083,50 @@ export class CfcEditor {
           return;
         }
         this.handleConnectionClick(connectionId, event);
+      },
+      onConnectionSegmentPointerDown: (connectionId, waypointIndex, event) => {
+        this.beginConnectionWaypointDrag(connectionId, waypointIndex, event);
+      },
+      onConnectionUnlock: (connectionId, event) => {
+        if (this.isInteractionLocked) {
+          return;
+        }
+        
+        const before = this.getGraph();
+        const connection = this.graph.connections.find((c) => c.id === connectionId);
+        
+        if (!connection || connection.routingMode !== "manual") {
+          return;
+        }
+
+        const fromNode = this.findNode(connection.fromNodeId);
+        const toNode = this.findNode(connection.toNodeId);
+
+        if (fromNode && toNode) {
+          // 1. Calculate the current manual path
+          const currentRoute = this.getManualRoutePoints(connection, fromNode, toNode);
+
+          // 2. Set mode to "auto" and clear persistent waypoints
+          connection.routingMode = "auto";
+          connection.waypoints = [];
+
+          // 3. Since we can't be certain which cache key the render method will use, 
+          // we inject the old manual route into the auto-routing cache under BOTH possible keys.
+          const fallbackCacheKey = `${fromNode.id}|${connection.fromPin}|${toNode.id}|${connection.toPin}`;
+          
+          const cacheEntry = {
+            version: this.routingCacheVersion,
+            route: currentRoute.points,
+          };
+
+          this.astarRouteCache.set(connection.id, cacheEntry);
+          this.astarRouteCache.set(fallbackCacheKey, cacheEntry);
+          
+          this.history.commit(before, this.graph);
+          this.renderConnections();
+          this.emitGraphChanged();
+          this.options.onStatus?.("Verbindung entsperrt. Wird beim nächsten Verschieben neu geroutet.");
+        }
       },
     });
   }
@@ -1139,81 +1209,6 @@ export class CfcEditor {
     this.render();
   }
 
-  private createAStarConnectionPath(
-    fromNode: CfcNode,
-    toNode: CfcNode,
-    fromPinId = "output:0",
-    toPinId = "input:0",
-    connectionId = "",
-  ): SVGPathElement {
-    const toRoutingObstacleNode = (node: CfcNode): CfcNode & { x: number; y: number; width: number; height: number } => {
-      if (node.type === "jump" || node.type === "label") {
-        return {
-          ...node,
-          width: node.width + 1,
-        };
-      }
-
-      if (node.type !== "return") {
-        return node;
-      }
-
-      return {
-        ...node,
-        x: node.x - 1,
-        width: node.width + 2,
-      };
-    };
-
-    const startPort = this.getOutputPortPoint(fromNode, fromPinId);
-    const endPort = this.getInputPortPoint(toNode, toPinId);
-    const start = { x: Math.ceil(startPort.x), y: this.getAStarPortY(fromNode, fromPinId, "output") };
-    const end = { x: endPort.x, y: this.getAStarPortY(toNode, toPinId, "input") };
-    const startRight = { x: start.x + 1, y: start.y };
-    const endRouteX = Math.ceil(end.x);
-    const endLeft = { x: endRouteX - 1, y: end.y };
-
-    const cacheKey = connectionId || `${fromNode.id}|${fromPinId}|${toNode.id}|${toPinId}`;
-    const cached = this.astarRouteCache.get(cacheKey);
-    const routingObstacles = this.graph.nodes.map(toRoutingObstacleNode);
-    let routePoints: GridPoint[] | null;
-
-    if (cached && cached.version === this.routingCacheVersion) {
-      routePoints = cached.route;
-    } else {
-      const startSegmentTouchesNode = routingObstacles.some(
-        (node) => node.id !== fromNode.id && doesHorizontalSegmentTouchObstacle(node, start.x, startRight.x, start.y),
-      );
-      const endSegmentTouchesNode = routingObstacles.some(
-        (node) => node.id !== toNode.id && doesHorizontalSegmentTouchObstacle(node, endLeft.x, end.x, end.y),
-      );
-
-      if (startSegmentTouchesNode || endSegmentTouchesNode) {
-        routePoints = null;
-      } else {
-        const route = computeOrthogonalRoute({
-          nodes: routingObstacles,
-          start: startRight,
-          startExit: startRight,
-          end: endLeft,
-          allowPoints: [startRight, endLeft],
-          searchMargin: SEARCH_MARGIN,
-          bendPenalty: BEND_PENALTY,
-        });
-        routePoints = route ? compactRouteToAnchors(appendAndCompactRoute([start, ...route], [end])) : null;
-      }
-      this.astarRouteCache.set(cacheKey, { version: this.routingCacheVersion, route: routePoints });
-    }
-
-    if (!routePoints) {
-      const fallbackPath = createPolylineConnectionPath([start, end], this.unitToPx.bind(this));
-      fallbackPath.classList.add("cfc-connection--fallback");
-      return fallbackPath;
-    }
-
-    return createPolylineConnectionPath(routePoints, this.unitToPx.bind(this));
-  }
-
   private startConnectionDrag(
     fromNodeId: string,
     fromPin: string,
@@ -1284,5 +1279,481 @@ export class CfcEditor {
 
     this.connectionDrag = null;
     this.renderConnections();
+  }
+
+  private beginConnectionWaypointDrag(connectionId: string, segmentIndex: number, event: PointerEvent): void {
+    if (this.isInteractionLocked) {
+      return;
+    }
+    const connection = this.graph.connections.find((entry) => entry.id === connectionId);
+    if (!connection) {
+      return;
+    }
+
+    const fromNode = this.findNode(connection.fromNodeId);
+    const toNode = this.findNode(connection.toNodeId);
+    if (!fromNode || !toNode) {
+      return;
+    }
+
+    // Determine the visible route points for this connection (manual uses stored waypoints,
+    // otherwise use A* route). We don't convert to manual here; conversion happens on actual move.
+    const routePoints =
+      connection.routingMode === "manual"
+        ? [this.getOutputPortPoint(fromNode, connection.fromPin), ...(connection.waypoints ?? []), this.getInputPortPoint(toNode, connection.toPin)]
+        : this.getAStarRoutePoints(fromNode, toNode, connection.fromPin, connection.toPin, connection.id).points;
+
+    // Only allow moving segments where both endpoints are internal waypoints.
+    if (segmentIndex <= 0 || segmentIndex >= routePoints.length - 2) {
+      return;
+    }
+
+    const waypointA = routePoints[segmentIndex];
+    const waypointB = routePoints[segmentIndex + 1];
+    if (!waypointA || !waypointB) {
+      return;
+    }
+
+    event.stopPropagation();
+    event.preventDefault();
+
+    this.connectionWaypointDrag = {
+      connectionId,
+      segmentIndex,
+      startPointerX: this.clientToGraphUnitX(event.clientX),
+      startPointerY: this.clientToGraphUnitY(event.clientY),
+      startRoutePoints: routePoints.map((point) => ({ x: point.x, y: point.y })),
+      hasConvertedToManual: connection.routingMode === "manual",
+    };
+    this.connectionWaypointHistoryBefore = this.getGraph();
+    this.selectedNodeIds.clear();
+    this.selectedConnectionIds.clear();
+    this.selectedConnectionIds.add(connectionId);
+    this.renderConnections();
+  }
+
+  private moveConnectionWaypointDrag(event: PointerEvent): void {
+    if (!this.connectionWaypointDrag) {
+      return;
+    }
+    const connection = this.graph.connections.find((entry) => entry.id === this.connectionWaypointDrag?.connectionId);
+    if (!connection) {
+      return;
+    }
+    const segmentIndex = this.connectionWaypointDrag.segmentIndex;
+    const startRoutePoint = this.connectionWaypointDrag.startRoutePoints[segmentIndex];
+    const endRoutePoint = this.connectionWaypointDrag.startRoutePoints[segmentIndex + 1];
+    if (!startRoutePoint || !endRoutePoint) {
+      return;
+    }
+
+    const nextPointerX = this.clientToGraphUnitX(event.clientX);
+    const nextPointerY = this.clientToGraphUnitY(event.clientY);
+    const deltaX = nextPointerX - this.connectionWaypointDrag.startPointerX;
+    const deltaY = nextPointerY - this.connectionWaypointDrag.startPointerY;
+
+    const isVerticalSegment = startRoutePoint.x === endRoutePoint.x;
+    const isHorizontalSegment = startRoutePoint.y === endRoutePoint.y;
+
+    const appliedDeltaX = isVerticalSegment ? deltaX : 0;
+    const appliedDeltaY = isHorizontalSegment ? deltaY : 0;
+
+    // Convert to manual only on first actual movement
+    if (!this.connectionWaypointDrag.hasConvertedToManual && (appliedDeltaX !== 0 || appliedDeltaY !== 0)) {
+      if (this.routingMode !== "astar") {
+        return;
+      }
+      const fromNode = this.findNode(connection.fromNodeId);
+      const toNode = this.findNode(connection.toNodeId);
+      if (!fromNode || !toNode) {
+        return;
+      }
+      const route = this.getAStarRoutePoints(fromNode, toNode, connection.fromPin, connection.toPin, connection.id);
+      connection.routingMode = "manual";
+      connection.waypoints = persistWaypointsFromRoutePoints(route.points);
+      this.connectionWaypointDrag.hasConvertedToManual = true;
+      this.options.onStatus?.("Verbindung geroutet und fixiert.");
+    }
+
+    const waypoints = connection.waypoints ?? [];
+    if (waypoints.length <= segmentIndex) {
+      return;
+    }
+
+    const startWaypointIndex = segmentIndex - 1;
+    const endWaypointIndex = segmentIndex;
+    const startWaypointA = waypoints[startWaypointIndex];
+    const startWaypointB = waypoints[endWaypointIndex];
+    if (!startWaypointA || !startWaypointB) {
+      return;
+    }
+
+    const nextAX = this.clampUnitToNonNegative(this.snapToGrid(startRoutePoint.x + appliedDeltaX));
+    const nextAY = this.clampUnitToNonNegative(this.snapToGrid(startRoutePoint.y + appliedDeltaY));
+    const nextBX = this.clampUnitToNonNegative(this.snapToGrid(endRoutePoint.x + appliedDeltaX));
+    const nextBY = this.clampUnitToNonNegative(this.snapToGrid(endRoutePoint.y + appliedDeltaY));
+
+    startWaypointA.x = nextAX;
+    startWaypointA.y = nextAY;
+    startWaypointB.x = nextBX;
+    startWaypointB.y = nextBY;
+
+    this.renderConnections();
+    this.emitGraphChanged();
+  }
+
+  private finishConnectionWaypointDrag(): void {
+    if (!this.connectionWaypointDrag) {
+      return;
+    }
+    const before = this.connectionWaypointHistoryBefore;
+    this.connectionWaypointDrag = null;
+    this.connectionWaypointHistoryBefore = null;
+    if (before) {
+      this.history.commit(before, this.graph);
+    }
+    this.renderConnections();
+    this.emitGraphChanged();
+  }
+
+  private resetSelectedConnectionRouting(): void {
+    let changed = false;
+    this.selectedConnectionIds.forEach((connectionId) => {
+      const connection = this.graph.connections.find((c) => c.id === connectionId);
+      if (!connection) {
+        return;
+      }
+      if (connection.routingMode === "manual") {
+        connection.routingMode = "auto";
+        connection.waypoints = [];
+        this.deferredAutoRoutingConnectionIds.add(connectionId);
+        changed = true;
+      }
+    });
+    if (changed) {
+      this.renderConnections();
+      this.emitGraphChanged();
+    }
+  }
+
+  private getManualRoutePoints(
+    connection: { fromNodeId: string; toNodeId: string; fromPin: string; toPin: string; waypoints?: GridPoint[] },
+    fromNode: CfcNode,
+    toNode: CfcNode,
+  ): { points: GridPoint[]; isFallback: boolean } {
+    const waypoints = connection.waypoints ?? [];
+    const fromPoint = this.getOutputPortPoint(fromNode, connection.fromPin);
+    const toPoint = this.getInputPortPoint(toNode, connection.toPin);
+
+    if (this.routingMode !== "astar") {
+      return { points: [fromPoint, ...waypoints, toPoint], isFallback: false };
+    }
+
+    if (waypoints.length === 0) {
+      return this.getAStarRoutePoints(fromNode, toNode, connection.fromPin, connection.toPin, connection.fromNodeId + "|" + connection.toNodeId);
+    }
+    const firstWaypoint = waypoints[0]!;
+    const lastWaypoint = waypoints[waypoints.length - 1]!;
+
+    const prefixRoute = this.getAStarRouteFromOutputPortToPoint(
+      fromNode,
+      connection.fromPin,
+      firstWaypoint,
+      connection.fromNodeId + "|" + connection.toNodeId,
+    );
+    const suffixRoute = this.getAStarRouteFromPointToInputPort(
+      lastWaypoint,
+      toNode,
+      connection.toPin,
+      connection.fromNodeId + "|" + connection.toNodeId,
+    );
+
+    return { points: composeManualRoutePoints(waypoints, prefixRoute, suffixRoute), isFallback: false };
+  }
+
+  private toRoutingObstacleNode(node: CfcNode): CfcNode & { x: number; y: number; width: number; height: number } {
+    if (node.type === "jump" || node.type === "label") {
+      return {
+        ...node,
+        width: node.width + 1,
+      };
+    }
+
+    if (node.type !== "return") {
+      return node;
+    }
+
+    return {
+      ...node,
+      x: node.x - 1,
+      width: node.width + 2,
+    };
+  }
+
+  private getRoutingObstacles(): Array<CfcNode & { x: number; y: number; width: number; height: number }> {
+    return this.graph.nodes.map((node) => this.toRoutingObstacleNode(node));
+  }
+
+  private getAStarRoutePoints(
+    fromNode: CfcNode,
+    toNode: CfcNode,
+    fromPinId = "output:0",
+    toPinId = "input:0",
+    connectionId = "",
+  ): { points: GridPoint[]; isFallback: boolean } {
+    const startPort = this.getOutputPortPoint(fromNode, fromPinId);
+    const endPort = this.getInputPortPoint(toNode, toPinId);
+    const start = { x: Math.ceil(startPort.x), y: this.getAStarPortY(fromNode, fromPinId, "output") };
+    const end = { x: endPort.x, y: this.getAStarPortY(toNode, toPinId, "input") };
+    const startRight = { x: start.x + 1, y: start.y };
+    const endRouteX = Math.ceil(end.x);
+    const endLeft = { x: endRouteX - 1, y: end.y };
+
+    const cacheKey = connectionId || `${fromNode.id}|${fromPinId}|${toNode.id}|${toPinId}`;
+    const cached = this.astarRouteCache.get(cacheKey);
+    const routingObstacles = this.getRoutingObstacles();
+    let routePoints: GridPoint[] | null;
+
+    if (cached && cached.version === this.routingCacheVersion) {
+      routePoints = cached.route;
+    } else {
+      const startSegmentTouchesNode = routingObstacles.some(
+        (node) => node.id !== fromNode.id && doesHorizontalSegmentTouchObstacle(node, start.x, startRight.x, start.y),
+      );
+      const endSegmentTouchesNode = routingObstacles.some(
+        (node) => node.id !== toNode.id && doesHorizontalSegmentTouchObstacle(node, endLeft.x, end.x, end.y),
+      );
+
+      if (startSegmentTouchesNode || endSegmentTouchesNode) {
+        routePoints = null;
+      } else {
+        const route = computeOrthogonalRoute({
+          nodes: routingObstacles,
+          start: startRight,
+          startExit: startRight,
+          end: endLeft,
+          allowPoints: [startRight, endLeft],
+          searchMargin: SEARCH_MARGIN,
+          bendPenalty: BEND_PENALTY,
+        });
+        routePoints = route ? compactRouteToAnchors(appendAndCompactRoute([start, ...route], [end])) : null;
+      }
+      this.astarRouteCache.set(cacheKey, { version: this.routingCacheVersion, route: routePoints });
+    }
+
+    return {
+      points: routePoints || [start, end],
+      isFallback: !routePoints,
+    };
+  }
+
+  private getAStarRouteFromOutputPortToPoint(
+    fromNode: CfcNode,
+    fromPinId: string,
+    targetPoint: GridPoint,
+    connectionId = "",
+  ): GridPoint[] {
+    const startPort = this.getOutputPortPoint(fromNode, fromPinId);
+    const start = { x: Math.ceil(startPort.x), y: this.getAStarPortY(fromNode, fromPinId, "output") };
+    const startRight = { x: start.x + 1, y: start.y };
+    const end = { x: Math.ceil(targetPoint.x), y: Math.ceil(targetPoint.y) };
+    const cacheKey = connectionId ? `${connectionId}|prefix|${fromNode.id}|${fromPinId}|${end.x}|${end.y}` : "";
+    const cached = cacheKey ? this.astarRouteCache.get(cacheKey) : null;
+    const routingObstacles = this.getRoutingObstacles();
+
+    if (cached && cached.version === this.routingCacheVersion && cached.route) {
+      return cached.route;
+    }
+
+    const route = computeOrthogonalRoute({
+      nodes: routingObstacles,
+      start: startRight,
+      startExit: startRight,
+      end,
+      allowPoints: [startRight, end],
+      searchMargin: SEARCH_MARGIN,
+      bendPenalty: BEND_PENALTY,
+    });
+
+    const orthogonalFallback =
+      startRight.y === end.y
+        ? [start, startRight, end]
+        : [start, startRight, { x: startRight.x, y: end.y }, end];
+
+    const routePoints = route
+      ? compactRouteToAnchors(appendAndCompactRoute([start, ...route], [end]))
+      : compactRouteToAnchors(orthogonalFallback);
+    if (cacheKey) {
+      this.astarRouteCache.set(cacheKey, { version: this.routingCacheVersion, route: routePoints });
+    }
+    return routePoints;
+  }
+
+  private getAStarRouteFromPointToInputPort(
+    sourcePoint: GridPoint,
+    toNode: CfcNode,
+    toPinId: string,
+    connectionId = "",
+  ): GridPoint[] {
+    const endPort = this.getInputPortPoint(toNode, toPinId);
+    const end = { x: endPort.x, y: this.getAStarPortY(toNode, toPinId, "input") };
+    const endRouteX = Math.ceil(end.x);
+    const endLeft = { x: endRouteX - 1, y: end.y };
+    const start = { x: Math.ceil(sourcePoint.x), y: Math.ceil(sourcePoint.y) };
+    const cacheKey = connectionId ? `${connectionId}|suffix|${start.x}|${start.y}|${toNode.id}|${toPinId}` : "";
+    const cached = cacheKey ? this.astarRouteCache.get(cacheKey) : null;
+    const routingObstacles = this.getRoutingObstacles();
+
+    if (cached && cached.version === this.routingCacheVersion && cached.route) {
+      return cached.route;
+    }
+
+    const route = computeOrthogonalRoute({
+      nodes: routingObstacles,
+      start,
+      startExit: start,
+      end: endLeft,
+      allowPoints: [start, endLeft],
+      searchMargin: SEARCH_MARGIN,
+      bendPenalty: BEND_PENALTY,
+    });
+
+    const orthogonalFallback =
+      start.y === endLeft.y
+        ? [start, endLeft, end]
+        : [start, { x: endLeft.x, y: start.y }, endLeft, end];
+
+    const routePoints = route
+      ? compactRouteToAnchors(appendAndCompactRoute([start, ...route], [end]))
+      : compactRouteToAnchors(orthogonalFallback);
+    if (cacheKey) {
+      this.astarRouteCache.set(cacheKey, { version: this.routingCacheVersion, route: routePoints });
+    }
+    return routePoints;
+  }
+
+  private updateManualConnectionWaypoints(_movedNodeIds: Set<string>): void {
+    this.graph.connections.forEach((connection) => {
+      if (connection.routingMode !== "manual") {
+        return;
+      }
+
+      const fromNode = this.findNode(connection.fromNodeId);
+      const toNode = this.findNode(connection.toNodeId);
+      if (!fromNode || !toNode) {
+        return;
+      }
+
+      const waypoints = connection.waypoints ?? [];
+      if (waypoints.length === 0) {
+        const route = this.getAStarRoutePoints(fromNode, toNode, connection.fromPin, connection.toPin, connection.id);
+        connection.waypoints = persistWaypointsFromRoutePoints(route.points);
+        return;
+      }
+
+      const route = this.getManualRoutePoints(connection, fromNode, toNode);
+      connection.waypoints = persistWaypointsFromRoutePoints(route.points);
+    });
+  }
+
+  private doNodesCollideWithWaypoints(nodeIds: string[], waypoints: GridPoint[]): boolean {
+    if (waypoints.length < 2) return false;
+
+    const nodesToCheck = nodeIds
+      .map(id => this.findNode(id))
+      .filter((n): n is CfcNode => n !== undefined);
+
+    if (nodesToCheck.length === 0) return false;
+
+    const obstacles = nodesToCheck.map(node => this.toRoutingObstacleNode(node));
+
+    // Check if any of the fixed segments intersect with one of the nodes
+    for (let i = 0; i < waypoints.length - 1; i += 1) {
+      const start = waypoints[i]!;
+      const end = waypoints[i + 1]!;
+
+      if (start.x === end.x) { // Vertical segment
+        if (obstacles.some(obs => doesVerticalSegmentTouchObstacle(obs, start.x, start.y, end.y))) {
+          return true;
+        }
+      } else if (start.y === end.y) { // Horizontal segment
+        if (obstacles.some(obs => doesHorizontalSegmentTouchObstacle(obs, start.x, end.x, start.y))) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private breakCollidingManualConnections(movedNodeIds: Set<string>): void {
+    if (movedNodeIds.size === 0) return;
+    const nodesToCheck = Array.from(movedNodeIds);
+
+    this.graph.connections.forEach((connection) => {
+      // Only manual connections with waypoints can collide
+      if (connection.routingMode !== "manual" || !connection.waypoints?.length) return;
+
+      // If the moved node lands exactly on the fixed waypoints of this connection:
+      if (this.doNodesCollideWithWaypoints(nodesToCheck, connection.waypoints)) {
+        connection.routingMode = "auto";
+        connection.waypoints = [];
+        this.deferredAutoRoutingConnectionIds.add(connection.id);
+        
+        this.options.onStatus?.("Manuelle Verbindung durch Hindernis aufgelöst.");
+      }
+    });
+  }
+
+  private clearDeferredAutoRouting(deferredConnectionIdsBefore: Set<string>): void {
+    const changed = deferredConnectionIdsBefore.size > 0;
+    this.deferredAutoRoutingConnectionIds.clear();
+    if (changed) {
+      this.renderConnections();
+    }
+  }
+
+  public onPointerMove(event: PointerEvent): void {
+    if (this.connectionWaypointDrag) {
+      this.moveConnectionWaypointDrag(event);
+    }
+  }
+
+  public onPointerUp(): void {
+    if (this.connectionWaypointDrag) {
+      this.finishConnectionWaypointDrag();
+    }
+  }
+
+  public resetConnectionRouting(): void {
+    this.resetSelectedConnectionRouting();
+  }
+
+  public finalizeNodeDragHistoryOverride(): void {
+    const deferredConnectionIdsBefore = new Set(this.deferredAutoRoutingConnectionIds);
+    const movedNodeIds = new Set<string>();
+
+    if (this.dragHistoryBefore) {
+      const before = this.dragHistoryBefore;
+      before.nodes.forEach((oldNode) => {
+        const currentNode = this.findNode(oldNode.id);
+        if (currentNode && (oldNode.x !== currentNode.x || oldNode.y !== currentNode.y)) {
+          movedNodeIds.add(oldNode.id);
+        }
+      });
+    }
+
+    if (movedNodeIds.size > 0) {
+      // 1. OBSTACLE CHECK: Check if the node was dropped onto existing connections
+      this.breakCollidingManualConnections(movedNodeIds);
+
+      // 2. GEOMETRY UPDATE: Update waypoints of attached manual connections
+      this.updateManualConnectionWaypoints(movedNodeIds);
+      
+      this.clearDeferredAutoRouting(deferredConnectionIdsBefore);
+    }
+
+    this.finalizeNodeDragHistory();
+    this.emitGraphChanged();
   }
 }

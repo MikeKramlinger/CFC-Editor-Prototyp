@@ -1,7 +1,7 @@
 import type { ConnectionDragState } from "../../core/editor/connection.js";
 import { extractInputPortDropTarget, extractOutputPortDropTarget } from "../../core/editor/connection.js";
-import type { CfcConnection, CfcNode } from "../../model.js";
-import { createBezierConnectionPath } from "../views/connectionRendererUi.js";
+import type { CfcConnection, CfcNode, GridPoint } from "../../model.js";
+import { createBezierConnectionPath, createPolylineConnectionPath } from "../views/connectionRendererUi.js";
 
 type RoutingMode = "bezier" | "astar";
 
@@ -10,6 +10,7 @@ interface RenderConnectionLayerOptions {
   fallbackOverlaySvg: SVGSVGElement;
   connections: CfcConnection[];
   selectedConnectionIds: Set<string>;
+  deferredAutoRoutingConnectionIds: Set<string>;
   isInteractionLocked: boolean;
   routingMode: RoutingMode;
   connectionDrag: ConnectionDragState | null;
@@ -17,14 +18,17 @@ interface RenderConnectionLayerOptions {
   getOutputPortPoint: (node: CfcNode, portId: string) => { x: number; y: number };
   getInputPortPoint: (node: CfcNode, portId: string) => { x: number; y: number };
   unitToPx: (value: number) => number;
-  createAStarConnectionPath: (
+  getManualRoutePoints: (connection: CfcConnection, fromNode: CfcNode, toNode: CfcNode) => { points: GridPoint[]; isFallback: boolean };
+  getAStarRoutePoints: (
     fromNode: CfcNode,
     toNode: CfcNode,
     fromPinId?: string,
     toPinId?: string,
     connectionId?: string,
-  ) => SVGPathElement;
+  ) => { points: GridPoint[]; isFallback: boolean };
   onConnectionClick: (connectionId: string, event: MouseEvent) => void;
+  onConnectionSegmentPointerDown: (connectionId: string, waypointIndex: number, event: PointerEvent) => void;
+  onConnectionUnlock?: (connectionId: string, event: MouseEvent) => void;
   canDropConnection: (fromNodeId: string, fromPin: string, toNodeId: string, toPin: string) => boolean;
 }
 
@@ -46,18 +50,42 @@ export const renderConnectionLayer = (options: RenderConnectionLayerOptions): vo
     const fromPoint = options.getOutputPortPoint(fromNode, connection.fromPin);
     const toPoint = options.getInputPortPoint(toNode, connection.toPin);
 
-    const path =
-      options.routingMode === "bezier"
-        ? createBezierConnectionPath(
-            options.unitToPx(fromPoint.x),
-            options.unitToPx(fromPoint.y),
-            options.unitToPx(toPoint.x),
-            options.unitToPx(toPoint.y),
-          )
-        : options.createAStarConnectionPath(fromNode, toNode, connection.fromPin, connection.toPin, connection.id);
-    const isFallback = path.classList.contains("cfc-connection--fallback");
+    let path: SVGPathElement;
+    let isFallback = false;
+    let routePoints: GridPoint[] = [];
+
+    if (connection.routingMode === "manual") {
+      const route = options.getManualRoutePoints(connection, fromNode, toNode);
+      routePoints = route.points;
+      isFallback = route.isFallback;
+      path = createPolylineConnectionPath(routePoints, options.unitToPx);
+      if (isFallback) {
+        path.classList.add("cfc-connection--fallback");
+      }
+    } else if (options.deferredAutoRoutingConnectionIds.has(connection.id)) {
+      routePoints = [fromPoint, toPoint];
+      path = createPolylineConnectionPath(routePoints, options.unitToPx);
+    } else if (options.routingMode === "bezier") {
+      path = createBezierConnectionPath(
+        options.unitToPx(fromPoint.x),
+        options.unitToPx(fromPoint.y),
+        options.unitToPx(toPoint.x),
+        options.unitToPx(toPoint.y),
+      );
+    } else {
+      const route = options.getAStarRoutePoints(fromNode, toNode, connection.fromPin, connection.toPin, connection.id);
+      routePoints = route.points;
+      isFallback = route.isFallback;
+      path = createPolylineConnectionPath(route.points, options.unitToPx);
+      if (isFallback) {
+        path.classList.add("cfc-connection--fallback");
+      }
+    }
     path.classList.add("cfc-connection");
     path.dataset.connectionId = connection.id;
+    if (connection.routingMode === "manual") {
+      path.classList.add("cfc-connection--manual");
+    }
     if (options.selectedConnectionIds.has(connection.id)) {
       path.classList.add("selected");
     }
@@ -66,6 +94,10 @@ export const renderConnectionLayer = (options: RenderConnectionLayerOptions): vo
     const hitPath = path.cloneNode(true) as SVGPathElement;
     hitPath.classList.add("cfc-connection-hit");
     hitPath.dataset.connectionId = connection.id;
+    hitPath.setAttribute("stroke", "transparent");
+    hitPath.setAttribute("stroke-width", "2");
+    hitPath.setAttribute("stroke-linecap", "butt");
+    hitPath.setAttribute("stroke-linejoin", "miter");
     hitPath.setAttribute("pointer-events", options.isInteractionLocked ? "none" : "stroke");
     if (!options.isInteractionLocked) {
       hitPath.addEventListener("click", (event) => {
@@ -80,6 +112,89 @@ export const renderConnectionLayer = (options: RenderConnectionLayerOptions): vo
       options.svg.append(path);
     }
     options.svg.append(hitPath);
+
+    // Add segment hit areas for manual connections (with draggable segments)
+    // OR for selected connections (to allow manual conversion on drag)
+    const shouldHaveSegmentHits = connection.routingMode === "manual" || options.selectedConnectionIds.has(connection.id);
+
+    if (shouldHaveSegmentHits && routePoints.length >= 4) {
+      for (let index = 1; index < routePoints.length - 2; index += 1) {
+        const start = routePoints[index];
+        const end = routePoints[index + 1];
+        if (!start || !end) {
+          continue;
+        }
+        const segmentHit = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        segmentHit.classList.add("cfc-connection-segment-hit");
+        segmentHit.setAttribute(
+          "d",
+          `M ${options.unitToPx(start.x)} ${options.unitToPx(start.y)} L ${options.unitToPx(end.x)} ${options.unitToPx(end.y)}`,
+        );
+        segmentHit.setAttribute("stroke", "transparent");
+        segmentHit.setAttribute("stroke-width", "6");
+        segmentHit.setAttribute("fill", "none");
+        segmentHit.setAttribute("pointer-events", options.isInteractionLocked ? "none" : "stroke");
+        if (!options.isInteractionLocked) {
+          segmentHit.style.cursor = start.x === end.x ? "ew-resize" : "ns-resize";
+        }
+        segmentHit.dataset.connectionId = connection.id;
+        segmentHit.dataset.waypointIndex = String(index);
+        if (!options.isInteractionLocked) {
+          segmentHit.addEventListener("pointerdown", (event) => {
+            event.stopPropagation();
+            options.onConnectionSegmentPointerDown(connection.id, index, event);
+          });
+        }
+        options.svg.append(segmentHit);
+      }
+    }
+
+    if (connection.routingMode === "manual") {
+      (connection.waypoints ?? []).forEach((point) => {
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        marker.classList.add("cfc-connection-marker");
+        marker.setAttribute("cx", String(options.unitToPx(point.x)));
+        marker.setAttribute("cy", String(options.unitToPx(point.y)));
+        marker.setAttribute("r", "3.5");
+        marker.setAttribute("pointer-events", "none");
+        options.svg.append(marker);
+      });
+
+      // Show lock icon only when selected and already manually routed
+      if (options.selectedConnectionIds.has(connection.id)) {
+        const offsetFromPin = 12;
+        const verticalOffset = 12;
+        const targetPointX = options.unitToPx(toPoint.x);
+        const targetPointY = options.unitToPx(toPoint.y);
+
+        const lockGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        // Allow clicks on the lock icon
+        lockGroup.setAttribute("pointer-events", options.isInteractionLocked ? "none" : "auto");
+
+        if (!options.isInteractionLocked) {
+          lockGroup.style.cursor = "pointer";
+        }
+
+        const lockText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        lockText.setAttribute("x", String(targetPointX - offsetFromPin));
+        lockText.setAttribute("y", String(targetPointY - verticalOffset + 5));
+        lockText.setAttribute("text-anchor", "middle");
+        lockText.setAttribute("font-size", "12");
+        lockText.setAttribute("fill", "#ffffff");
+        lockText.setAttribute("font-weight", "bold");
+        lockText.textContent = "🔒";
+        lockGroup.append(lockText);
+
+        if (!options.isInteractionLocked && options.onConnectionUnlock) {
+          lockGroup.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            options.onConnectionUnlock && options.onConnectionUnlock(connection.id, ev as MouseEvent);
+          });
+        }
+
+        options.svg.append(lockGroup);
+      }
+    }
   });
 
   if (options.connectionDrag) {

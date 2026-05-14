@@ -3,14 +3,14 @@ import { createDeserializeResult, type FormatError } from "./errors.js";
 import { CfcGraph, CfcNode, CfcConnection, createEmptyGraph, CfcNodeType, getNodeTemplateByType } from "../model.js";
 import { fitNodeWidthToLabel } from "../core/editor/nodeSizing.js";
 import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
-import { canOmitPortReference, serializePort, buildOrderedNodesFromRaw, collectOrderedNodeValidationErrors, collectDuplicateGroupedErrors } from "./shared.js";
+import { canOmitPortReference, serializePort, buildOrderedNodesFromRaw, collectOrderedNodeValidationErrors, collectDuplicateGroupedErrors, parseValidatedWaypoints } from "./shared.js";
 
 class CfcSTParser {
   parse(text: string): { graph: CfcGraph; errors: FormatError[] } {
     const lines = text.split(/\r?\n/);
     const graph = createEmptyGraph();
     const declLines: string[] = [];
-    const connectionDrafts: Array<{ operator: "=>" | "->"; left: string; right: string }> = [];
+    const connectionDrafts: Array<{ operator: "=>" | "->"; left: string; right: string; routingMode?: "auto" | "manual"; waypoints?: Array<{x: number; y: number}> }> = [];
     const errors: FormatError[] = [];
 
     type State = "INIT" | "DECL" | "CFC";
@@ -53,7 +53,7 @@ class CfcSTParser {
         return Math.max(0, Number.parseInt(match[1] ?? "1", 10) - 1);
       }
       return 0;
-    };
+    }
 
     const trimComma = (s: string) => s.replace(/,$/, "");
 
@@ -165,7 +165,6 @@ class CfcSTParser {
                   activeNode.executionOrder = num;
                 }
               }
-              // Ignore executionOrder for nodes that don't support it
             }
             else if (key === "@x") {
               if (!activeNode.__metadata) activeNode.__metadata = {};
@@ -211,15 +210,65 @@ class CfcSTParser {
 
         // constant injection (=>)
         if (line.includes("=>")) {
-          const [left, right] = line.split("=>").map(s => s.trim());
-          connectionDrafts.push({ operator: "=>", left: left ?? "", right: right ?? "" });
+          const [left, rest] = line.split("=>").map(s => s.trim());
+          let right = rest ?? "";
+          let routingMode: "auto" | "manual" = "auto";
+          let waypoints: Array<{x: number; y: number}> = [];
+          
+          const pathMatch = right.match(/@path=(\S+)/);
+          if (pathMatch) {
+            routingMode = "manual";
+            const waypointsStr = pathMatch[1] ?? "";
+            const parsedWaypoints = parseValidatedWaypoints(
+              waypointsStr.split(";").filter((pair) => pair.length > 0).map((pair) => {
+                const [xStr, yStr] = pair.split(",");
+                return { x: xStr ?? "", y: yStr ?? "" };
+              }),
+            );
+            if (parsedWaypoints.error) {
+              pushParseError(i + 1, "formatErrorInvalidCoordinates", parsedWaypoints.error);
+              continue;
+            }
+            waypoints = parsedWaypoints.waypoints;
+            right = right.replace(/@path=\S+/, "").trim();
+          }
+          
+          const draft: typeof connectionDrafts[0] = { operator: "=>", left: left ?? "", right };
+          if (routingMode !== "auto") draft.routingMode = routingMode;
+          if (waypoints.length > 0) draft.waypoints = waypoints;
+          connectionDrafts.push(draft);
           continue;
         }
 
         // normal connection (->)
         if (line.includes("->")) {
-          const [left, right] = line.split("->").map(s => s.trim());
-          connectionDrafts.push({ operator: "->", left: left ?? "", right: right ?? "" });
+          const [left, rest] = line.split("->").map(s => s.trim());
+          let right = rest ?? "";
+          let routingMode: "auto" | "manual" = "auto";
+          let waypoints: Array<{x: number; y: number}> = [];
+          
+          const pathMatch = right.match(/@path=(\S+)/);
+          if (pathMatch) {
+            routingMode = "manual";
+            const waypointsStr = pathMatch[1] ?? "";
+            const parsedWaypoints = parseValidatedWaypoints(
+              waypointsStr.split(";").filter((pair) => pair.length > 0).map((pair) => {
+                const [xStr, yStr] = pair.split(",");
+                return { x: xStr ?? "", y: yStr ?? "" };
+              }),
+            );
+            if (parsedWaypoints.error) {
+              pushParseError(i + 1, "formatErrorInvalidCoordinates", parsedWaypoints.error);
+              continue;
+            }
+            waypoints = parsedWaypoints.waypoints;
+            right = right.replace(/@path=\S+/, "").trim();
+          }
+          
+          const draft: typeof connectionDrafts[0] = { operator: "->", left: left ?? "", right };
+          if (routingMode !== "auto") draft.routingMode = routingMode;
+          if (waypoints.length > 0) draft.waypoints = waypoints;
+          connectionDrafts.push(draft);
           continue;
         }
 
@@ -381,12 +430,22 @@ class CfcSTParser {
 
       const target = resolveEndpoint(right, "input");
 
-      pushConnection({
+      const connection: Omit<CfcConnection, "id"> = {
         fromNodeId: source.nodeId,
         fromPin: source.port,
         toNodeId: target.nodeId,
         toPin: target.port,
-      });
+      };
+      
+      // Restore routing metadata if present
+      if (draft.routingMode) {
+        connection.routingMode = draft.routingMode;
+      }
+      if (draft.waypoints && draft.waypoints.length > 0) {
+        connection.waypoints = draft.waypoints;
+      }
+      
+      pushConnection(connection);
     });
 
     // Trim leading/trailing blank lines from the parsed declaration block so
@@ -508,18 +567,27 @@ export const cfcStFormat: CfcFormatAdapter = {
       const fromNode = nodeById.get(conn.fromNodeId);
       const toNode = nodeById.get(conn.toNodeId);
 
+      let connectionLine = "";
       if (conn.fromNodeId === "__CONST__" || conn.fromNodeId === "__VAR__") {
         const targetText = toNode ? formatEndpoint(conn.toNodeId, conn.toPin, "input") : `${conn.toNodeId}.${conn.toPin}`;
-        result += `${conn.fromPin} => ${targetText}\n`;
+        connectionLine = `${conn.fromPin} => ${targetText}`;
       } else if (fromNode?.type === "input") {
         const sourceText = formatEndpoint(conn.fromNodeId, conn.fromPin, "output");
         const targetText = toNode ? formatEndpoint(conn.toNodeId, conn.toPin, "input") : `${conn.toNodeId}.${conn.toPin}`;
-        result += `${sourceText} => ${targetText}\n`;
+        connectionLine = `${sourceText} => ${targetText}`;
       } else {
         const sourceText = fromNode ? formatEndpoint(conn.fromNodeId, conn.fromPin, "output") : `${conn.fromNodeId}.${conn.fromPin}`;
         const targetText = toNode ? formatEndpoint(conn.toNodeId, conn.toPin, "input") : `${conn.toNodeId}.${conn.toPin}`;
-        result += `${sourceText} -> ${targetText}\n`;
+        connectionLine = `${sourceText} -> ${targetText}`;
       }
+
+      // Add routing metadata if present
+      if (conn.routingMode === "manual" && conn.waypoints && conn.waypoints.length > 0) {
+        const waypointsStr = conn.waypoints.map(wp => `${wp.x},${wp.y}`).join(";");
+        connectionLine += ` @path=${waypointsStr}`;
+      }
+
+      result += `${connectionLine}\n`;
     });
 
     return result.trim() + "\n";

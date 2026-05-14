@@ -511,6 +511,29 @@ input[type="number"]:hover {
   opacity: 0.9;
 }
 
+.cfc-connection--manual {
+  stroke: #4b5563;
+  stroke-width: 2.5;
+}
+
+.cfc-connection-marker {
+  fill: #ffffff;
+  stroke: #4b5563;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.cfc-connection-segment-hit {
+  stroke: transparent;
+  stroke-width: 6;
+  fill: none;
+  cursor: grab;
+}
+
+.cfc-connection-segment-hit:active {
+  cursor: grabbing;
+}
+
 .cfc-selection-box {
   position: absolute;
   border: 1px dashed #2358d4;

@@ -14,6 +14,7 @@ import {
   buildValidConnectionsFromRaw,
   canOmitPortReference,
   serializePort,
+  parseValidatedWaypoints,
   toExecutionOrderedSerializableGraph,
 } from "./shared.js";
 
@@ -39,6 +40,8 @@ interface ParsedConnectionDraft {
   fromRaw: string;
   toRaw: string;
   lineNumber: number;
+  routingMode?: "auto" | "manual";
+  waypoints?: Array<{x: number; y: number}>;
 }
 
 const HEADER = "cfc LR";
@@ -330,20 +333,53 @@ const parseConnectionLine = (line: string, lineNumber: number): ParsedConnection
     throw e;
   }
 
-  const fromRaw = (match[2] ?? "").trim();
-  const toRaw = (match[3] ?? "").trim();
+  let fromRaw = (match[2] ?? "").trim();
+  let toRaw = (match[3] ?? "").trim();
+  
   if (fromRaw.length === 0 || toRaw.length === 0) {
     const e = new Error(`Invalid connection syntax.`);
     (e as any).messageKey = "formatErrorInvalidConnectionSyntax";
     throw e;
   }
 
-  return {
+  // Parse custom {path: ...} metadata
+  let routingMode: "auto" | "manual" = "auto";
+  let waypoints: Array<{x: number; y: number}> = [];
+  
+  const pathMatch = toRaw.match(/\{path:\s*([^}]*)\}/);
+  if (pathMatch) {
+    routingMode = "manual";
+    const waypointsStr = (pathMatch[1] ?? "").trim();
+    if (waypointsStr.length > 0) {
+      const parsedWaypoints = parseValidatedWaypoints(
+        waypointsStr.split(";").filter((pair) => pair.length > 0).map((pair) => {
+          const [xStr, yStr] = pair.split(",");
+          return { x: xStr ?? "", y: yStr ?? "" };
+        }),
+      );
+      if (parsedWaypoints.error) {
+        const e = new Error(parsedWaypoints.error);
+        (e as any).messageKey = "formatErrorInvalidCoordinates";
+        (e as any).lineNumber = lineNumber;
+        throw e;
+      }
+      waypoints = parsedWaypoints.waypoints;
+    }
+    // Remove the {path: ...} part from toRaw to preserve endpoint logic
+    toRaw = toRaw.replace(/\{path:\s*([^}]*)\}/, "").trim();
+  }
+
+  const draft: ParsedConnectionDraft = {
     id: (match[1] ?? "").trim() || undefined,
     fromRaw,
     toRaw,
     lineNumber,
   };
+  
+  if (routingMode !== "auto") draft.routingMode = routingMode;
+  if (waypoints.length > 0) draft.waypoints = waypoints;
+  
+  return draft;
 };
 
 const parseEndpoint = (
@@ -693,13 +729,23 @@ const parseDslGraphWithErrors = (raw: string): DeserializeResult => {
       const from = parseEndpoint(draft.fromRaw, "output", nodeTypeById, draft.lineNumber);
       const to = parseEndpoint(draft.toRaw, "input", nodeTypeById, draft.lineNumber);
 
-      return {
+      const conn: any = {
         id: draft.id ?? `C${index + 1}`,
         fromNodeId: from.nodeId,
         fromPin: from.port,
         toNodeId: to.nodeId,
         toPin: to.port,
       };
+      
+      // Add routing metadata if present
+      if (draft.routingMode) {
+        conn.routingMode = draft.routingMode;
+      }
+      if (draft.waypoints && draft.waypoints.length > 0) {
+        conn.waypoints = draft.waypoints;
+      }
+      
+      return conn;
     });
 
     graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
@@ -771,7 +817,16 @@ export const cfcDslFormat: CfcFormatAdapter = {
           "input",
           nodeTypeById,
         );
-        lines.push(`${indent}${from} --> ${to}`);
+        
+        let connectionLine = `${indent}${from} --> ${to}`;
+        
+        // Add path routing metadata if manual mode is enabled
+        if (connection.routingMode === "manual" && connection.waypoints && connection.waypoints.length > 0) {
+          const waypointsStr = connection.waypoints.map(wp => `${wp.x},${wp.y}`).join(";");
+          connectionLine += ` {path: ${waypointsStr}}`;
+        }
+        
+        lines.push(connectionLine);
       });
     }
 

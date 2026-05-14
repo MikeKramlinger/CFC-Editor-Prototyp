@@ -12,6 +12,15 @@ const areNodesEqual = (left: CfcGraph["nodes"][number], right: CfcGraph["nodes"]
   );
 };
 
+const areWaypointsEqual = (
+  left: Array<{ x: number; y: number }> | undefined,
+  right: Array<{ x: number; y: number }> | undefined,
+): boolean => {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((wp, i) => wp.x === right[i]?.x && wp.y === right[i]?.y);
+};
+
 const areConnectionsEqual = (
   left: CfcGraph["connections"][number],
   right: CfcGraph["connections"][number],
@@ -21,7 +30,9 @@ const areConnectionsEqual = (
     left.fromNodeId === right.fromNodeId &&
     left.fromPin === right.fromPin &&
     left.toNodeId === right.toNodeId &&
-    left.toPin === right.toPin
+    left.toPin === right.toPin &&
+    left.routingMode === right.routingMode &&
+    areWaypointsEqual(left.waypoints, right.waypoints)
   );
 };
 

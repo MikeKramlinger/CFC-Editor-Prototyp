@@ -7,7 +7,22 @@ import {
 import { isExecutionOrderedNode } from "../core/graph/executionOrder.js";
 import type { CfcFormatAdapter, DeserializeResult } from "./types.js";
 import { createDeserializeResult, createFormatErrorWithFallback } from "./errors.js";
-import { buildOrderedNodesFromRaw, buildValidConnectionsFromRaw, collectOrderedNodeValidationErrors, deriveDeclarationsFromNodes, serializePort, getImportLabelValue, getExportLabelEntry, getExportLabelFieldName, parseNodeEntry, sortParsedNodeEntries, collectDuplicateGroupedErrors, getCommonRequiredNodeAttributeSpecs, getRequiredNodeAttributeSpecs } from "./shared.js";
+import {
+  buildOrderedNodesFromRaw,
+  buildValidConnectionsFromRaw,
+  collectOrderedNodeValidationErrors,
+  deriveDeclarationsFromNodes,
+  serializePort,
+  getImportLabelValue,
+  getExportLabelEntry,
+  getExportLabelFieldName,
+  parseNodeEntry,
+  sortParsedNodeEntries,
+  collectDuplicateGroupedErrors,
+  getCommonRequiredNodeAttributeSpecs,
+  getRequiredNodeAttributeSpecs,
+  parseValidatedWaypoints,
+} from "./shared.js";
 import { parseDeclarations, generateDeclarations } from "../declarations/parser.js";
 
 const findLineNumberByOccurrence = (raw: string, token: string, occurrence: number, fallbackLine: number): number => {
@@ -125,6 +140,22 @@ export const xmlFormat: CfcFormatAdapter = {
       connectionElement.setAttribute("fromPin", serializePort(connection.fromPin, "output", nodeTypeById.get(connection.fromNodeId)));
       connectionElement.setAttribute("to", connection.toNodeId);
       connectionElement.setAttribute("toPin", serializePort(connection.toPin, "input", nodeTypeById.get(connection.toNodeId)));
+      
+      if (connection.routingMode && connection.routingMode !== "auto") {
+        connectionElement.setAttribute("routingMode", connection.routingMode);
+      }
+      
+      if (connection.waypoints?.length) {
+        const waypointsElem = documentRoot.createElement("waypoints");
+        connection.waypoints.forEach((waypoint) => {
+          const waypointElem = documentRoot.createElement("waypoint");
+          waypointElem.setAttribute("x", String(waypoint.x));
+          waypointElem.setAttribute("y", String(waypoint.y));
+          waypointsElem.append(waypointElem);
+        });
+        connectionElement.append(waypointsElem);
+      }
+      
       connections.append(connectionElement);
     });
 
@@ -360,17 +391,43 @@ export const xmlFormat: CfcFormatAdapter = {
       const connectionsRaw = Array.from(connectionElements).map((connectionElement) => {
         const rawFromPin = connectionElement.getAttribute("fromPin") ?? "output:0";
         const rawToPin = connectionElement.getAttribute("toPin") ?? "input:0";
+        const waypointElements = Array.from(connectionElement.getElementsByTagNameNS("*", "waypoint"));
+        const parsedWaypoints = parseValidatedWaypoints(
+          waypointElements.map((wp) => ({
+            x: wp.getAttribute("x") ?? "",
+            y: wp.getAttribute("y") ?? "",
+          })),
+        );
+        if (parsedWaypoints.error) {
+          throw new Error(parsedWaypoints.error);
+        }
+
         return {
           id: requireAttr(connectionElement, "id"),
           fromNodeId: requireAttr(connectionElement, "from"),
           fromPin: rawFromPin === "output" ? "output:0" : rawFromPin,
           toNodeId: requireAttr(connectionElement, "to"),
           toPin: rawToPin === "input" ? "input:0" : rawToPin,
+          routingMode: connectionElement.getAttribute("routingMode") ?? "auto",
+          waypoints: parsedWaypoints.waypoints,
         };
       });
 
       const nodeIds = new Set(graph.nodes.map((node) => node.id));
       graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
+
+      // Restore routing mode and waypoints
+      graph.connections.forEach((connection) => {
+        const raw = connectionsRaw.find((c: any) => c.id === connection.id);
+        if (raw) {
+          if (typeof raw.routingMode === "string") {
+            connection.routingMode = raw.routingMode as "auto" | "manual";
+          }
+          if (Array.isArray(raw.waypoints)) {
+            connection.waypoints = raw.waypoints;
+          }
+        }
+      });
 
       const declElements = cfc.getElementsByTagNameNS("*", "declarations");
       const declEl = declElements && declElements.length > 0 ? declElements.item(0) : null;

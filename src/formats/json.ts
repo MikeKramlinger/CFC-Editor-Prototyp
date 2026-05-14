@@ -11,6 +11,7 @@ import {
   getRequiredNodeAttributeSpecs,
   isObjectRecord,
   parseNodeEntry,
+  parseValidatedWaypoints,
   toExecutionOrderedSerializableGraph,
   toStringValue,
   collectDuplicateGroupedErrors,
@@ -69,8 +70,6 @@ const findInvalidCoordinateSyntax = (raw: string): { line: number; value: string
   return null;
 };
 
-
-
 export const jsonFormat: CfcFormatAdapter = {
   id: "json",
   label: "JSON",
@@ -79,17 +78,32 @@ export const jsonFormat: CfcFormatAdapter = {
     const payload = toExecutionOrderedSerializableGraph(graph);
     const declRaw = typeof payload.declarations === "string" ? payload.declarations : deriveDeclarationsFromNodes(payload.nodes as any);
     const declParsed = parseDeclarations(declRaw);
+    
     const exportPayload: Record<string, unknown> = {
       version: payload.version,
       declarations: declParsed.variables.map((variable) => ({ name: variable.name, type: variable.type })),
       nodes: payload.nodes,
-      connections: payload.connections.map((connection) => ({
-        id: connection.id,
-        fromNodeId: connection.fromNodeId,
-        toNodeId: connection.toNodeId,
-        fromPin: connection.fromPin,
-        toPin: connection.toPin,
-      })),
+      connections: payload.connections.map((connection) => {
+        const conn: Record<string, unknown> = {
+          id: connection.id,
+          fromNodeId: connection.fromNodeId,
+          toNodeId: connection.toNodeId,
+          fromPin: connection.fromPin,
+          toPin: connection.toPin,
+        };
+        
+        // Routing Mode übernehmen, falls nicht Standard
+        if (connection.routingMode && connection.routingMode !== "auto") {
+          conn.routingMode = connection.routingMode;
+        }
+        
+        // Waypoints serialisieren (Array von {x, y})
+        if (connection.waypoints?.length) {
+          conn.waypoints = connection.waypoints;
+        }
+        
+        return conn;
+      }),
     };
     return `${JSON.stringify(exportPayload, null, 2)}\n`;
   },
@@ -135,6 +149,7 @@ export const jsonFormat: CfcFormatAdapter = {
 
       const parsedEntries: Array<any> = [];
       const idCounts = new Map<string, number>();
+      
       const validationErrors = nodesRaw.flatMap((entry, index) => {
         const nodeErrors: ReturnType<typeof createFormatErrorWithFallback>[] = [];
         const nodeId = isObjectRecord(entry) && typeof entry.id === "string" ? entry.id : `N${index + 1}`;
@@ -144,21 +159,9 @@ export const jsonFormat: CfcFormatAdapter = {
 
         if (isObjectRecord(entry)) {
           const allowedKeys = new Set([
-            "id",
-            "type",
-            "label",
-            "x",
-            "y",
-            "width",
-            "height",
-            "executionOrder",
-            "typeName",
-            "declarationName",
-            "instanceName",
-            "expression",
-            "content",
-            "text",
-            "signal",
+            "id", "type", "label", "x", "y", "width", "height",
+            "executionOrder", "typeName", "declarationName",
+            "instanceName", "expression", "content", "text", "signal",
           ]);
           const invalidKeys = getJsonObjectKeys(entry).filter((key) => !allowedKeys.has(key));
           if (invalidKeys.length > 0) {
@@ -169,16 +172,12 @@ export const jsonFormat: CfcFormatAdapter = {
 
           const hasTypeAttr = typeof entry.type === "string" && entry.type.trim().length > 0;
           const nodeType = (hasTypeAttr ? entry.type : "box") as CfcNodeType;
-          // mark whether the original export label field was present so serialization
-          // can preserve omissions instead of re-adding defaulted attributes
+          
+          if (!(entry as any).__metadata) (entry as any).__metadata = {};
           try {
             const fieldName = getExportLabelFieldName(nodeType);
-            if (!(entry as any).__metadata) (entry as any).__metadata = {};
             (entry as any).__metadata.hadExportLabelField = Object.prototype.hasOwnProperty.call(entry, fieldName);
-          } catch {
-            /* ignore */
-          }
-          if (!(entry as any).__metadata) (entry as any).__metadata = {};
+          } catch { /* ignore */ }
           (entry as any).__metadata.hadExecutionOrder = Object.prototype.hasOwnProperty.call(entry, "executionOrder");
 
           const missingKeys: string[] = [];
@@ -188,9 +187,7 @@ export const jsonFormat: CfcFormatAdapter = {
               const rawValue = entry[key];
               return typeof rawValue === "string" ? rawValue.trim().length > 0 : rawValue !== undefined && rawValue !== null;
             });
-            if (!hasValue) {
-              missingKeys.push(spec.field);
-            }
+            if (!hasValue) missingKeys.push(spec.field);
           });
 
           if (hasTypeAttr) {
@@ -200,9 +197,7 @@ export const jsonFormat: CfcFormatAdapter = {
                 const rawValue = entry[key];
                 return typeof rawValue === "string" ? rawValue.trim().length > 0 : rawValue !== undefined && rawValue !== null;
               });
-              if (!hasValue) {
-                missingKeys.push(spec.field);
-              }
+              if (!hasValue) missingKeys.push(spec.field);
             });
           }
 
@@ -211,13 +206,7 @@ export const jsonFormat: CfcFormatAdapter = {
             const message = hasTypeAttr
               ? `Fehlende Attribute für Knotentyp "${nodeType}" (${detail})`
               : `Fehlende Attribute für Knotentyp (${detail})`;
-            nodeErrors.push(
-              createFormatErrorWithFallback(
-                lineNumber,
-                "formatErrorMissingAttributes",
-                message,
-              ),
-            );
+            nodeErrors.push(createFormatErrorWithFallback(lineNumber, "formatErrorMissingAttributes", message));
           }
         }
 
@@ -257,6 +246,7 @@ export const jsonFormat: CfcFormatAdapter = {
         lines.push(lineNumber);
         connectionIdLines.set(connectionId, lines);
       });
+      
       connectionIdLines.forEach((lines, connectionId) => {
         if (lines.length > 1) {
           validationErrors.push({
@@ -273,15 +263,33 @@ export const jsonFormat: CfcFormatAdapter = {
       }
 
       graph.nodes = buildOrderedNodesFromRaw(nodesRaw);
-
       const nodeIds = new Set(graph.nodes.map((node) => node.id));
       graph.connections = buildValidConnectionsFromRaw(connectionsRaw, nodeIds);
+
+      // Routing Mode und Waypoints wiederherstellen
+      graph.connections.forEach((connection) => {
+        const rawConn = connectionsRaw.find(
+          (c: any) => isObjectRecord(c) && c.id === connection.id,
+        );
+        if (!rawConn || !isObjectRecord(rawConn)) return;
+
+        if (typeof rawConn.routingMode === "string") {
+          connection.routingMode = rawConn.routingMode as "auto" | "manual";
+        }
+        
+        if (Array.isArray(rawConn.waypoints)) {
+          connection.waypoints = (rawConn.waypoints as any[])
+            .filter((p) => isObjectRecord(p) && typeof p.x === "number" && typeof p.y === "number")
+            .map((p) => ({ x: p.x, y: p.y }));
+        }
+      });
+
       if (Array.isArray((parsed as any).declarations)) {
         const vars = (parsed as any).declarations as Array<Record<string, unknown>>;
-        const variables = vars.map((variable) => ({ name: String(variable.name ?? ""), type: String(variable.type ?? "") }));
+        const variables = vars.map((v) => ({ name: String(v.name ?? ""), type: String(v.type ?? "") }));
         graph.declarations = generateDeclarations(variables as any);
-      } else if (typeof parsed.declarations === "string" && parsed.declarations.trim().length > 0) {
-        graph.declarations = parsed.declarations;
+      } else if (typeof (parsed as any).declarations === "string" && (parsed as any).declarations.trim().length > 0) {
+        graph.declarations = (parsed as any).declarations;
       } else {
         graph.declarations = deriveDeclarationsFromNodes(graph.nodes);
       }
@@ -293,9 +301,7 @@ export const jsonFormat: CfcFormatAdapter = {
         {
           line: 1,
           messageKey: "formatErrorInvalidDataFormat",
-          message: errorMessage.startsWith("Ungültig")
-            ? errorMessage
-            : `Ungültiges JSON: ${errorMessage}`,
+          message: errorMessage.startsWith("Ungültig") ? errorMessage : `Ungültiges JSON: ${errorMessage}`,
         },
       ]);
     }

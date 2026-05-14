@@ -76,12 +76,19 @@ export interface CfcNode {
   height: number;
 }
 
+export interface GridPoint {
+  x: number;
+  y: number;
+}
+
 export interface CfcConnection {
   id: string;
   fromNodeId: string;
   fromPin: string;
   toNodeId: string;
   toPin: string;
+  routingMode?: "auto" | "manual";
+  waypoints?: GridPoint[];
 }
 
 export interface CfcGraph {
@@ -103,6 +110,9 @@ export const cloneGraph = (graph: CfcGraph): CfcGraph => ({
   version: graph.version,
   creationDateTime: graph.creationDateTime,
   nodes: graph.nodes.map((node) => ({ ...node })),
-  connections: graph.connections.map((connection) => ({ ...connection })),
+  connections: graph.connections.map((connection) => ({
+    ...connection,
+    waypoints: connection.waypoints ? connection.waypoints.map((p) => ({ ...p })) : undefined,
+  })),
   declarations: graph.declarations,
 });

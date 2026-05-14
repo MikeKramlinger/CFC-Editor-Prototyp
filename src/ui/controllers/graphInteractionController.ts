@@ -33,6 +33,7 @@ interface GraphInteractionControllerOptions {
   setDragState: (state: DragState | null) => void;
   getConnectionDrag: () => ConnectionDragState | null;
   setConnectionDrag: (state: ConnectionDragState | null) => void;
+  getConnectionWaypointDrag: () => boolean;
   getMarqueeSelection: () => MarqueeSelectionState | null;
   setMarqueeSelection: (state: MarqueeSelectionState | null) => void;
   getPanState: () => PanState | null;
@@ -54,6 +55,8 @@ interface GraphInteractionControllerOptions {
   applyMarqueeSelection: () => void;
   moveConnectionDrag: (event: PointerEvent) => void;
   finishConnectionDrag: () => void;
+  moveConnectionWaypointDrag?: (event: PointerEvent) => void;
+  finishConnectionWaypointDrag?: () => void;
   findNodeForDrag: (nodeId: string) => { x: number; y: number; setPosition: (x: number, y: number) => void } | null;
   snapToGrid: (value: number) => number;
   clampUnitToNonNegative: (value: number) => number;
@@ -153,6 +156,14 @@ export const installGraphInteractionController = (options: GraphInteractionContr
       return;
     }
 
+    // Handle waypoint drag only if one is actually active
+    if (options.getConnectionWaypointDrag && options.getConnectionWaypointDrag()) {
+      if (options.moveConnectionWaypointDrag) {
+        options.moveConnectionWaypointDrag(event);
+      }
+      return;
+    }
+
     if (options.getConnectionDrag()) {
       options.moveConnectionDrag(event);
       return;
@@ -203,6 +214,13 @@ export const installGraphInteractionController = (options: GraphInteractionContr
     }
     options.setMarqueeSelection(null);
     options.selectionBox.style.display = "none";
+
+    // Finish waypoint drag only if one is active
+    if (options.getConnectionWaypointDrag && options.getConnectionWaypointDrag()) {
+      if (options.finishConnectionWaypointDrag) {
+        options.finishConnectionWaypointDrag();
+      }
+    }
     
     options.finishConnectionDrag();
     if (options.getDragState()) {
@@ -219,6 +237,14 @@ export const installGraphInteractionController = (options: GraphInteractionContr
     }
     options.setPanState(null);
     options.canvas.classList.remove("is-panning");
+    
+    // Finish waypoint drag only if one is active
+    if (options.getConnectionWaypointDrag && options.getConnectionWaypointDrag()) {
+      if (options.finishConnectionWaypointDrag) {
+        options.finishConnectionWaypointDrag();
+      }
+    }
+    
     options.finishConnectionDrag();
     if (options.getDragState()) {
       options.onNodeDragFinished();

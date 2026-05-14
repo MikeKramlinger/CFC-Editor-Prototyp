@@ -2,6 +2,7 @@ import {
   DEFAULT_NODE_TYPE,
   getNodeTemplateByType,
   isCfcNodeType,
+  type GridPoint,
   type CfcConnection,
   type CfcGraph,
   type CfcNode,
@@ -72,6 +73,52 @@ export const serializePort = (value: unknown, kind: "input" | "output", type?: C
     return kind;
   }
   return normalized;
+};
+
+export const parseValidatedWaypoints = (
+  rawWaypoints: unknown,
+): { waypoints: GridPoint[]; error: string | null } => {
+  if (!Array.isArray(rawWaypoints)) {
+    return { waypoints: [], error: null };
+  }
+
+  const parseCoordinate = (value: unknown): number | null => {
+    if (typeof value === "number") {
+      return Number.isFinite(value) && Number.isInteger(value) ? value : null;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.length === 0) {
+        return null;
+      }
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) && Number.isInteger(parsed) ? parsed : null;
+    }
+    return null;
+  };
+
+  const waypoints: GridPoint[] = [];
+  for (const rawWaypoint of rawWaypoints) {
+    if (!isObjectRecord(rawWaypoint)) {
+      return {
+        waypoints: [],
+        error: `Ungültige Wegpunkte: erwartet wurde ein Objekt mit x/y-Koordinaten.`,
+      };
+    }
+
+    const x = parseCoordinate(rawWaypoint.x);
+    const y = parseCoordinate(rawWaypoint.y);
+    if (x === null || y === null || x < 0 || y < 0) {
+      return {
+        waypoints: [],
+        error: `Ungültige Wegpunkte: Koordinaten müssen ganze, nicht-negative Zahlen sein.`,
+      };
+    }
+
+    waypoints.push({ x, y });
+  }
+
+  return { waypoints, error: null };
 };
 
 // Label field helpers: centralize mapping between internal `label` and
@@ -316,13 +363,26 @@ export const parseConnectionEntry = (entry: unknown, index: number): CfcConnecti
     return null;
   }
 
-  return {
+  const connection: CfcConnection = {
     id: toStringValue(entry.id, `C${index + 1}`),
     fromNodeId: toStringValue(entry.fromNodeId, ""),
     fromPin: normalizePort(entry.fromPin, "output"),
     toNodeId: toStringValue(entry.toNodeId, ""),
     toPin: normalizePort(entry.toPin, "input"),
   };
+
+  if (typeof entry.routingMode === "string" && (entry.routingMode === "auto" || entry.routingMode === "manual")) {
+    connection.routingMode = entry.routingMode;
+  }
+
+  if (Array.isArray(entry.waypoints)) {
+    const { waypoints, error } = parseValidatedWaypoints(entry.waypoints);
+    if (!error && waypoints.length > 0) {
+      connection.waypoints = waypoints;
+    }
+  }
+
+  return connection;
 };
 
 export const sortParsedNodeEntries = (entries: ParsedNodeEntry[]): ParsedNodeEntry[] => {
@@ -549,6 +609,10 @@ export const toExecutionOrderedSerializableGraph = (
       fromPin: serializePort(connection.fromPin, "output", nodeTypeById.get(connection.fromNodeId)),
       toNodeId: connection.toNodeId,
       toPin: serializePort(connection.toPin, "input", nodeTypeById.get(connection.toNodeId)),
+      // Hier nehmen wir den routingMode mit auf:
+      ...(connection.routingMode && connection.routingMode !== "auto" ? { routingMode: connection.routingMode } : {}),
+      // Hier nehmen wir die Waypoints mit auf:
+      ...(connection.waypoints && connection.waypoints.length > 0 ? { waypoints: connection.waypoints } : {}),
     })),
     declarations: typeof graph.declarations === "string" ? graph.declarations : deriveDeclarationsFromNodes(graph.nodes),
   };
