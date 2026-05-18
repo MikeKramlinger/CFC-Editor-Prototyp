@@ -1,4 +1,4 @@
-import { CfcEditor } from "./editor.js";
+import { CfcEditor, PAGE_GRAPH_MAX_X, PAGE_GRAPH_MAX_Y, PAGE_MARGIN_WIDTH } from "./editor.js";
 import { getNextSerialForPrefix, getNextLabelIndexForNodeType } from "./core/editor/id.js";
 import { getStoredLanguage, storeLanguage, t, type UiLanguage } from "./i18n.js";
 import { getAdapterById, listAdapters } from "./formats/registry.js";
@@ -21,6 +21,16 @@ import { createParticipantNameDialogController } from "./ui/controllers/particip
 import { createQuizAbortDialogController } from "./ui/controllers/quizAbortDialogController.js";
 import { createToolbarController } from "./ui/controllers/toolbarController.js";
 import { createToolboxController } from "./ui/controllers/toolboxController.js";
+import {
+  createPageController,
+  getPageAreaForNode as getPageAreaForNodeUtil,
+  type EditorPage,
+  type PageController,
+  type PlcopenPageArea,
+  type PlcopenPageMeta,
+  type PlcopenPagedGraph,
+  type PlcopenPagedNode,
+} from "./ui/controllers/pageController.js";
 import { getDataPanelUiElements } from "./ui/views/dataPanelUi.js";
 import { query } from "./ui/views/domQueryUi.js";
 import { getParticipantNameDialogUiElements } from "./ui/views/participantNameDialogUi.js";
@@ -43,6 +53,12 @@ import { syncCreatedNodeDeclaration } from "./declarations/index.js";
 const canvas = query<HTMLDivElement>("#canvas");
 const languageToggleButton = query<HTMLButtonElement>("#language-toggle");
 const graphStage = query<HTMLDivElement>("#graph-stage");
+const pagePanel = query<HTMLElement>("#page-panel");
+const pageList = query<HTMLDivElement>("#page-list");
+const pageHeader = query<HTMLDivElement>("#page-header");
+const pageNameInput = query<HTMLInputElement>("#page-name-input");
+const pageDescInput = query<HTMLInputElement>("#page-desc-input");
+// page add/rename/delete controls removed; page panel only lists pages now
 const toolbarSection = query<HTMLElement>(".toolbar");
 const toolbarUi = getToolbarUiElements();
 const toolboxUi = getToolboxUiElements();
@@ -88,8 +104,23 @@ const QUIZ_PARTICIPANT_NAME_STORAGE_KEY = "cfc-quiz-participant-name";
 type UiTheme = "light" | "dark";
 type ShortcutContext = "graph" | "data";
 type BulkConnectionMode = "count" | "single-target" | "all-to-all";
+type EditorMode = "normal" | "paged";
+
+const LEFT_BORDER_ALLOWED_TYPES: CfcNodeType[] = ["input", "connection-mark-sink"];
+const RIGHT_BORDER_ALLOWED_TYPES: CfcNodeType[] = ["output", "connection-mark-source"];
+const pageBounds = {
+  maxX: PAGE_GRAPH_MAX_X,
+  maxY: PAGE_GRAPH_MAX_Y,
+  marginWidth: PAGE_MARGIN_WIDTH,
+};
 
 let currentGraph: CfcGraph = createEmptyGraph();
+let normalModeGraph: CfcGraph = createEmptyGraph();
+let editorMode: EditorMode = "normal";
+let editorPages: EditorPage[] = [];
+let activeEditorPageId: string | null = null;
+let nextEditorPageNumber = 1;
+let pageController: PageController | null = null;
 const initialSelectedToolboxType: CfcNodeType = "box";
 let lastShortcutContext: ShortcutContext = "graph";
 let isQuizModeActive = false;
@@ -122,6 +153,8 @@ const quizAbortDialog = createQuizAbortDialogController({
   ui: quizAbortDialogUi,
   getFallbackConfirmText: () => t(currentLanguage, "quizAbortConfirm"),
 });
+
+normalModeGraph = cloneGraph(currentGraph);
 
 const readTextFromFile = (file: File): Promise<string> => {
   return file.text();
@@ -547,12 +580,22 @@ let onEditorDeclarationsChanged = () => {
 const editor = new CfcEditor(canvas, currentGraph, {
   onGraphChanged: (graph) => {
     currentGraph = graph;
+    if (editorMode === "paged") {
+      const activePage = editorPages.find((page) => page.id === activeEditorPageId);
+      if (activePage) {
+        activePage.graph = cloneGraph(graph);
+      }
+      // Re-render border nodes when graph changes in paged mode
+      renderBorderAreaNodes();
+    } else {
+      normalModeGraph = cloneGraph(graph);
+    }
     // Keep the declaration panel in sync when the graph changes
     syncDeclarationsFromGraphToPanel();
 
     // In quiz graph tasks, keep data text in sync with the currently selected format.
     if (isQuizModeActive && quizSession.isActive() && isGraphQuizTask(quizSession.getActiveTask())) {
-      dataPanel.setDataText(getCurrentAdapter().serialize(currentGraph));
+      dataPanel.setDataText(serializeGraphForCurrentFormat());
     }
   },
   onStatus: () => undefined,
@@ -693,7 +736,7 @@ const applyQuizTaskViewState = (viewState: QuizTaskViewState): void => {
   currentGraph = editor.getGraph();
   dataPanel.setMode("data-model");
   if (isGraphQuizTask(viewState.task)) {
-    dataPanel.setDataText(getCurrentAdapter().serialize(currentGraph));
+    dataPanel.setDataText(serializeGraphForCurrentFormat());
   } else {
     dataPanel.setDataText(viewState.dataText);
   }
@@ -743,6 +786,7 @@ const setQuizPanelOpen = (open: boolean): void => {
 const setToolbarLockedState = (locked: boolean): void => {
   const controls: Array<HTMLButtonElement | HTMLSelectElement> = [
     toolbarUi.routingModeButton,
+    toolbarUi.editorModeToggleButton,
     toolbarUi.bulkMenuToggleButton,
     toolbarUi.formatSelect,
     toolbarUi.exportButton,
@@ -828,7 +872,7 @@ const importQuizDataIntoGraph = (): boolean => {
   const importedGraph = deserializeResult.graph;
   editor.loadGraph(importedGraph);
   currentGraph = editor.getGraph();
-  const normalizedDataText = getCurrentAdapter().serialize(currentGraph);
+  const normalizedDataText = serializeGraphForCurrentFormat();
   if (normalizedDataText !== rawDataText) {
     dataPanel.setDataText(normalizedDataText);
   }
@@ -975,6 +1019,237 @@ const syncDeclarationsFromGraphToPanel = (): void => {
   }
 };
 
+const getEditorPageById = (pageId: string | null): EditorPage | null => {
+  if (!pageId) {
+    return null;
+  }
+  return editorPages.find((page) => page.id === pageId) ?? null;
+};
+
+const getDefaultEditorPageName = (index: number): string => `${t(currentLanguage, "pageNamePrefix")} ${index}`;
+
+const createEditorPage = (graph: CfcGraph): EditorPage => {
+  const pageNumber = nextEditorPageNumber;
+  nextEditorPageNumber += 1;
+  return {
+    id: `page-${pageNumber}`,
+    name: getDefaultEditorPageName(pageNumber),
+    description: "",
+    graph: cloneGraph(graph),
+  };
+};
+
+const getPageAreaForNode = (node: CfcNode): PlcopenPageArea => {
+  return getPageAreaForNodeUtil(node, pageBounds);
+};
+
+const buildPagedExportGraph = (): PlcopenPagedGraph => {
+  const baseGraph = editorPages[0]?.graph ?? currentGraph;
+  const pageGraphs = editorPages.length > 0 ? editorPages : [{ id: "page-1", name: "1. Page", description: "", graph: baseGraph }];
+
+  const nodes: PlcopenPagedNode[] = [];
+  const connections: CfcGraph["connections"] = [];
+
+  pageGraphs.forEach((page, pageIndex) => {
+    page.graph.nodes.forEach((node) => {
+      nodes.push({
+        ...node,
+        pageId: pageIndex,
+        pageArea: getPageAreaForNode(node),
+      });
+    });
+
+    page.graph.connections.forEach((connection) => {
+      connections.push({ ...connection });
+    });
+  });
+
+  return {
+    ...cloneGraph(baseGraph),
+    pages: pageGraphs.map((page) => ({
+      name: page.name,
+      description: page.description,
+      marginWidth: PAGE_MARGIN_WIDTH,
+      width: PAGE_GRAPH_MAX_X,
+      height: PAGE_GRAPH_MAX_Y,
+    })),
+    nodes,
+    connections,
+  };
+};
+
+const serializeGraphForCurrentFormat = (): string => {
+  const adapter = getCurrentAdapter();
+  if (editorMode === "paged" && adapter.id === "plcopen-xml") {
+    return adapter.serialize(buildPagedExportGraph());
+  }
+  return adapter.serialize(currentGraph);
+};
+
+const applyImportedGraph = (graph: CfcGraph & Partial<PlcopenPagedGraph>): void => {
+  if (graph.pages && graph.pages.length > 0) {
+    const pageGraphs = graph.pages.map((page, pageIndex) => {
+      const pageNodes = graph.nodes.filter((node) => {
+        const pageNode = node as PlcopenPagedNode;
+        return (typeof pageNode.pageId === "number" ? pageNode.pageId : 0) === pageIndex;
+      });
+      const pageConnections = graph.connections.filter((connection) => {
+        const sourceNode = graph.nodes.find((node) => node.id === connection.fromNodeId) as PlcopenPagedNode | undefined;
+        const sourcePageId = typeof sourceNode?.pageId === "number" ? sourceNode.pageId : 0;
+        return sourcePageId === pageIndex;
+      });
+
+      return {
+        id: `page-${pageIndex + 1}`,
+        name: page.name,
+        description: page.description,
+        graph: {
+          ...cloneGraph(graph),
+          nodes: pageNodes.map((node) => ({ ...node })),
+          connections: pageConnections.map((connection) => ({ ...connection })),
+        },
+      } as EditorPage;
+    });
+
+    editorPages = pageGraphs;
+    activeEditorPageId = editorPages[0]?.id ?? null;
+    editorMode = "paged";
+    editor.setPageBounded(true);
+    const activePage = editorPages[0];
+    if (activePage) {
+      editor.loadGraph(cloneGraph(activePage.graph));
+      currentGraph = editor.getGraph();
+      normalModeGraph = cloneGraph(graph);
+      renderEditorPages();
+      updateEditorModeToggleButton();
+      return;
+    }
+  }
+
+  editor.loadGraph(graph);
+  currentGraph = editor.getGraph();
+  if (editorMode === "paged") {
+    const activePage = getEditorPageById(activeEditorPageId);
+    if (activePage) {
+      activePage.graph = cloneGraph(currentGraph);
+    }
+    renderEditorPages();
+  }
+};
+
+const syncCurrentGraphIntoActivePage = (): void => {
+  if (editorMode !== "paged") {
+    return;
+  }
+  const activePage = getEditorPageById(activeEditorPageId);
+  if (!activePage) {
+    return;
+  }
+  activePage.graph = editor.getGraph();
+};
+
+const updateEditorModeToggleButton = (): void => {
+  const isPagedMode = editorMode === "paged";
+  const buttonText = isPagedMode
+    ? t(currentLanguage, "editorModeTogglePaged")
+    : t(currentLanguage, "editorModeToggleNormal");
+  const buttonAria = isPagedMode
+    ? t(currentLanguage, "editorModeTogglePagedAria")
+    : t(currentLanguage, "editorModeToggleNormalAria");
+
+  toolbarUi.editorModeToggleButton.textContent = buttonText;
+  toolbarUi.editorModeToggleButton.setAttribute("aria-pressed", isPagedMode ? "true" : "false");
+  toolbarUi.editorModeToggleButton.setAttribute("aria-label", buttonAria);
+  toolbarUi.editorModeToggleButton.setAttribute("title", buttonAria);
+};
+
+const activateEditorPage = (pageId: string): void => {
+  if (editorMode !== "paged") {
+    return;
+  }
+  const nextPage = getEditorPageById(pageId);
+  if (!nextPage) {
+    return;
+  }
+  syncCurrentGraphIntoActivePage();
+  activeEditorPageId = pageId;
+  editor.loadGraph(cloneGraph(nextPage.graph));
+  currentGraph = editor.getGraph();
+  // update header inputs
+  if (pageNameInput) {
+    pageNameInput.value = nextPage.name;
+    pageNameInput.title = t(currentLanguage, "pageNamePlaceholder");
+  }
+  if (pageDescInput) {
+    pageDescInput.value = nextPage.description ?? "";
+    pageDescInput.title = t(currentLanguage, "pageDescriptionPlaceholder");
+  }
+};
+
+const insertEditorPageAt = (index: number): void => {
+  if (editorMode !== "paged") {
+    return;
+  }
+
+  syncCurrentGraphIntoActivePage();
+  const clampedIndex = Math.max(0, Math.min(index, editorPages.length));
+  const newPage = createEditorPage(createEmptyGraph());
+  editorPages.splice(clampedIndex, 0, newPage);
+  activateEditorPage(newPage.id);
+  renderEditorPages();
+  dataPanel.setDataText(serializeGraphForCurrentFormat());
+};
+
+const renderEditorPages = (): void => {
+  if (!pageController) {
+    return;
+  }
+  pageController.renderPages();
+};
+
+const ensureEditorPagesInitialized = (): void => {
+  if (editorPages.length > 0) {
+    if (!activeEditorPageId) {
+      activeEditorPageId = editorPages[0]?.id ?? null;
+    }
+    return;
+  }
+
+  const firstPage = createEditorPage(normalModeGraph);
+  editorPages = [firstPage];
+  activeEditorPageId = firstPage.id;
+};
+
+const setEditorMode = (nextMode: EditorMode): void => {
+  if (editorMode === nextMode) {
+    renderEditorPages();
+    updateEditorModeToggleButton();
+    return;
+  }
+
+  if (nextMode === "paged") {
+    normalModeGraph = editor.getGraph();
+    ensureEditorPagesInitialized();
+    const activePage = getEditorPageById(activeEditorPageId) ?? editorPages[0] ?? null;
+    if (activePage) {
+      activeEditorPageId = activePage.id;
+      editorMode = "paged";
+      editor.setPageBounded(true);
+      editor.loadGraph(cloneGraph(activePage.graph));
+      currentGraph = editor.getGraph();
+    }
+  } else {
+    syncCurrentGraphIntoActivePage();
+    editorMode = "normal";
+    editor.setPageBounded(false);
+    editor.loadGraph(cloneGraph(normalModeGraph));
+    currentGraph = editor.getGraph();
+  }
+
+  renderEditorPages();
+  updateEditorModeToggleButton();
+};
+
 const toolbox = createToolboxController({
   workspace: toolboxUi.workspace,
   toolboxList: toolboxUi.toolboxList,
@@ -991,6 +1266,77 @@ const resolveDraggedNodeType = (event: DragEvent): CfcNodeType | null => {
     return fromTransfer;
   }
   return toolbox.getDraggedType();
+};
+
+const isAllowedBorderType = (nodeType: CfcNodeType, side: "left" | "right"): boolean => {
+  const allowedTypes = side === "left" ? LEFT_BORDER_ALLOWED_TYPES : RIGHT_BORDER_ALLOWED_TYPES;
+  return allowedTypes.includes(nodeType);
+};
+
+const addBorderNodeToActivePage = (nodeType: CfcNodeType, side: "left" | "right", dropUnitY: number): void => {
+  const template = getNodeTemplateByType(nodeType);
+  const nextIndex = getNextSerialForPrefix(
+    "N",
+    currentGraph.nodes.map((node) => node.id),
+  );
+  const labelIndex = getNextLabelIndexForNodeType(currentGraph, nodeType);
+  const borderX = side === "left" ? 0 : Math.max(0, PAGE_GRAPH_MAX_X - template.width);
+  const nodeY = Math.min(
+    Math.max(0, PAGE_GRAPH_MAX_Y - template.height),
+    dropUnitY - template.height / 2,
+  );
+  const node: CfcNode = {
+    id: `N${nextIndex}`,
+    type: nodeType,
+    borderSide: side,
+    x: borderX,
+    y: nodeY,
+    width: template.width,
+    height: template.height,
+    label: `${template.label} ${labelIndex}`,
+  };
+  // Ensure border nodes follow the same declaration/name rules as regular nodes
+  const declarationSync = syncCreatedNodeDeclaration(currentGraph.declarations, node);
+  currentGraph.declarations = declarationSync.declarations;
+  node.label = declarationSync.label;
+  if (declarationSync.typeName) {
+    node.typeName = declarationSync.typeName;
+  }
+  currentGraph.nodes.push(node);
+  // Load graph and update editor's declarations state
+  editor.loadGraph(currentGraph);
+  editor.setDeclarations(currentGraph.declarations);
+};
+
+pageController = createPageController({
+  ui: {
+    pagePanel,
+    pageList,
+    pageHeader,
+    graphStage,
+    workspace: toolboxUi.workspace,
+    canvas,
+  },
+  bounds: pageBounds,
+  getEditorMode: () => editorMode,
+  isQuizModeActive: () => isQuizModeActive,
+  getPages: () => editorPages,
+  getActivePageId: () => activeEditorPageId,
+  onActivatePage: (pageId) => activateEditorPage(pageId),
+  onInsertPageAt: (index) => insertEditorPageAt(index),
+  resolveDraggedNodeType: () => toolbox.getDraggedType(),
+  isAllowedBorderType: (nodeType, side) => isAllowedBorderType(nodeType, side),
+  onDropBorderNode: (nodeType, side, unitY) => {
+    addBorderNodeToActivePage(nodeType, side, unitY);
+    renderBorderAreaNodes();
+  },
+  onClearDraggedType: () => toolbox.clearDraggedType(),
+  t,
+  getLanguage: () => currentLanguage,
+});
+
+const renderBorderAreaNodes = (): void => {
+  pageController?.renderBorderAreaNodes();
 };
 
 const createBoxesAndConnections = (
@@ -1204,15 +1550,106 @@ const toolbar = createToolbarController({
   },
   getCurrentAdapter,
   getCurrentGraph: () => currentGraph,
+  getSerializedGraph: () => serializeGraphForCurrentFormat(),
   setCurrentGraph: (graph) => {
     currentGraph = graph;
   },
-  loadGraph: (graph) => editor.loadGraph(graph),
+  loadGraph: (graph) => applyImportedGraph(graph),
   getDataText: () => dataPanel.getDataText(),
   setDataText: (value) => dataPanel.setDataText(value),
   setMetrics: (value) => dataPanel.setMetrics(value),
   setDataFormatErrors: (errors) => dataPanel.setDataFormatErrors(errors),
 });
+
+toolbarUi.editorModeToggleButton.addEventListener("click", () => {
+  if (isQuizModeActive) {
+    return;
+  }
+
+  setEditorMode(editorMode === "normal" ? "paged" : "normal");
+  dataPanel.setDataText(serializeGraphForCurrentFormat());
+});
+
+// Create and manage the 'page' toolbox item dynamically
+const createPageToolboxItem = (): HTMLButtonElement => {
+  const pageItem = document.createElement("button");
+  pageItem.id = "toolbox-page-item";
+  pageItem.type = "button";
+  pageItem.className = "toolbox-item toolbox-item--page";
+  pageItem.draggable = true;
+  
+  const icon = document.createElement("span");
+  icon.className = "toolbox-item__icon";
+  icon.textContent = "📄";
+  
+  const label = document.createElement("span");
+  label.className = "toolbox-item__label";
+  label.textContent = t(currentLanguage, "pageToolboxLabel");
+  
+  pageItem.append(icon, label);
+  
+  pageItem.addEventListener("dragstart", (e) => {
+    try {
+      e.dataTransfer?.setData("text/plain", "new-page");
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+    } catch (err) {
+      // ignore
+    }
+  });
+  
+  return pageItem;
+};
+
+const toolboxPageItem = createPageToolboxItem();
+toolboxUi.toolboxList.prepend(toolboxPageItem);
+
+if (pageList) {
+  pageList.addEventListener("dragover", (e) => {
+    if (editorMode !== "paged") return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  });
+
+  pageList.addEventListener("drop", (e) => {
+    if (editorMode !== "paged") return;
+    if ((e.target as HTMLElement | null)?.closest(".page-drop-zone")) {
+      return;
+    }
+    e.preventDefault();
+    const data = e.dataTransfer?.getData("text/plain");
+    if (data === "new-page") {
+      syncCurrentGraphIntoActivePage();
+      const nextPage = createEditorPage(createEmptyGraph());
+      editorPages.push(nextPage);
+      // activate via helper to ensure header sync
+      activateEditorPage(nextPage.id);
+      renderEditorPages();
+      dataPanel.setDataText(serializeGraphForCurrentFormat());
+    }
+  });
+}
+
+// sync header inputs -> active page
+if (pageNameInput) {
+  pageNameInput.addEventListener("input", () => {
+    if (editorMode !== "paged") return;
+    const activePage = getEditorPageById(activeEditorPageId);
+    if (!activePage) return;
+    activePage.name = pageNameInput.value;
+    renderEditorPages();
+  });
+}
+
+if (pageDescInput) {
+  pageDescInput.addEventListener("input", () => {
+    if (editorMode !== "paged") return;
+    const activePage = getEditorPageById(activeEditorPageId);
+    if (!activePage) return;
+    activePage.description = pageDescInput.value;
+  });
+}
+
+// page add/rename/delete handlers removed — page switching happens by clicking list items
 
 quizToggleButton.addEventListener("click", () => {
   if (isQuizModeActive) {
@@ -1452,10 +1889,52 @@ quizEndButton.addEventListener("click", () => {
 canvas.addEventListener(
   "wheel",
   (event: WheelEvent) => {
+    if (editorMode === "paged" && event.ctrlKey) {
+      return;
+    }
     event.preventDefault();
     const delta = event.deltaY < 0 ? 0.1 : -0.1;
     editor.zoomAtClient(delta, event.clientX, event.clientY);
     toolbar.updateZoomLabel();
+  },
+  { passive: false },
+);
+
+// Scroll-Handler für Page-Mode: Shift+Mausrad oder Alt+Mausrad zum scrollen
+canvas.addEventListener(
+  "wheel",
+  (event: WheelEvent) => {
+    if (editorMode !== "paged" || (!event.ctrlKey && !event.shiftKey && !event.altKey)) {
+      return;
+    }
+    event.preventDefault();
+    
+    // Ctrl+Mausrad = Standard-Scrollen im Page-Mode
+    if (event.ctrlKey) {
+      const scrollSpeed = 30;
+      const deltaY = event.deltaY > 0 ? -scrollSpeed : scrollSpeed;
+      const deltaX = event.deltaX > 0 ? -scrollSpeed : scrollSpeed;
+      if (Math.abs(event.deltaY) >= Math.abs(event.deltaX)) {
+        editor.pan(0, deltaY);
+      } else {
+        editor.pan(deltaX, 0);
+      }
+      return;
+    }
+
+    // Shift+Mausrad = Vertical Scroll
+    // Shift+Scroll + Horizontal modifier = Horizontal Scroll
+    const scrollSpeed = 30; // pixels per wheel tick
+    const deltaY = event.deltaY > 0 ? -scrollSpeed : scrollSpeed;
+    const deltaX = event.deltaX > 0 ? -scrollSpeed : scrollSpeed;
+    
+    if (event.shiftKey && !event.ctrlKey) {
+      // Shift+Mausrad = Vertical Scroll
+      editor.pan(0, deltaY);
+    } else if (event.altKey) {
+      // Alt+Mausrad = Horizontal Scroll (alternative)
+      editor.pan(deltaX, 0);
+    }
   },
   { passive: false },
 );
@@ -1465,6 +1944,42 @@ canvas.addEventListener("dragover", (event: DragEvent) => {
   if (!nodeType || !isCfcNodeType(nodeType)) {
     return;
   }
+
+  if (editorMode === "paged") {
+    const graphLayer = canvas.querySelector(".cfc-graph-layer");
+    const gridSizeStr = graphLayer ? getComputedStyle(graphLayer).getPropertyValue("--grid-size") : "24px";
+    const gridSize = Number(gridSizeStr.replace("px", "")) || 24;
+    const contentLayer = graphLayer ? graphLayer.querySelector("div") as HTMLElement | null : null;
+    let translateX = 0;
+    let scale = 1;
+
+    if (contentLayer) {
+      const transform = getComputedStyle(contentLayer).transform;
+      if (transform && transform !== "none") {
+        const m = transform.match(/matrix\(([^)]+)\)/);
+        if (m) {
+          const partsText = m[1] ?? "";
+          const parts = partsText.split(",").map((p) => Number(p.trim()));
+          scale = parts[0] || 1;
+          translateX = parts[4] || 0;
+        }
+      }
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const unitX = (event.clientX - rect.left - translateX) / gridSize / scale;
+
+    if (unitX < PAGE_MARGIN_WIDTH) {
+      if (!isAllowedBorderType(nodeType, "left")) {
+        return;
+      }
+    } else if (unitX >= PAGE_GRAPH_MAX_X - PAGE_MARGIN_WIDTH) {
+      if (!isAllowedBorderType(nodeType, "right")) {
+        return;
+      }
+    }
+  }
+
   event.preventDefault();
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = "copy";
@@ -1480,7 +1995,63 @@ canvas.addEventListener("drop", (event: DragEvent) => {
 
   event.preventDefault();
   toolbox.clearDraggedType();
-  editor.addNodeFromToolbox(nodeType, event.clientX, event.clientY);
+
+  // If we're in paged mode and the drop is inside a left/right margin, create a border node.
+  try {
+    const graphLayer = canvas.querySelector(".cfc-graph-layer");
+    const gridSizeStr = graphLayer ? getComputedStyle(graphLayer).getPropertyValue("--grid-size") : "24px";
+    const gridSize = Number(gridSizeStr.replace("px", "")) || 24;
+    // compute transform of contentLayer to read pan/zoom
+    const contentLayer = graphLayer ? graphLayer.querySelector("div") as HTMLElement | null : null;
+    let translateX = 0;
+    let translateY = 0;
+    let scale = 1;
+    if (contentLayer) {
+      const transform = getComputedStyle(contentLayer).transform;
+      if (transform && transform !== "none") {
+        const m = transform.match(/matrix\(([^)]+)\)/);
+        if (m) {
+          const partsText = m[1] ?? "";
+          const parts = partsText.split(",").map((p) => Number(p.trim()));
+          // matrix(a, b, c, d, e, f) -> scale = a, translateX = e, translateY = f
+          scale = parts[0] || 1;
+          translateX = parts[4] || 0;
+          translateY = parts[5] || 0;
+        }
+      }
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const clientX = event.clientX;
+    const clientY = event.clientY;
+    const graphPxX = clientX - rect.left - translateX;
+    const graphPxY = clientY - rect.top - translateY;
+    const unitX = graphPxX / gridSize / scale;
+    const unitY = graphPxY / gridSize / scale;
+
+    if (editorMode === "paged") {
+      if (unitX < PAGE_MARGIN_WIDTH) {
+        if (isAllowedBorderType(nodeType, "left")) {
+          addBorderNodeToActivePage(nodeType, "left", unitY);
+          renderBorderAreaNodes();
+        }
+        return;
+      }
+      if (unitX >= PAGE_GRAPH_MAX_X - PAGE_MARGIN_WIDTH) {
+        if (isAllowedBorderType(nodeType, "right")) {
+          addBorderNodeToActivePage(nodeType, "right", unitY);
+          renderBorderAreaNodes();
+        }
+        return;
+      }
+    }
+
+    // default: create normal node
+    editor.addNodeFromToolbox(nodeType, event.clientX, event.clientY);
+  } catch (err) {
+    // fallback
+    editor.addNodeFromToolbox(nodeType, event.clientX, event.clientY);
+  }
 });
 
 dataPanelUi.dataText.addEventListener("pointerdown", () => {
@@ -1607,6 +2178,7 @@ const applyLanguageHeaderAndToolbar = (): void => {
   languageToggleButton.setAttribute("aria-label", languageAria);
   languageToggleButton.setAttribute("title", languageAria);
   toolbarUi.bulkMenuToggleButton.textContent = t(currentLanguage, "bulkMenuToggle");
+  updateEditorModeToggleButton();
   setTextBySelector('label[for="format-select"]', t(currentLanguage, "formatLabel"));
   toolbarUi.exportButton.textContent = t(currentLanguage, "export");
   toolbarUi.importButton.textContent = t(currentLanguage, "import");
@@ -1649,6 +2221,19 @@ const applyLanguageBulkMenu = (): void => {
 const applyLanguageWorkspaceAndDataArea = (): void => {
   setTextBySelector(".toolbox h2", t(currentLanguage, "toolboxTitle"));
   setAttributeBySelector(".toolbox", "aria-label", t(currentLanguage, "toolboxAriaLabel"));
+  setAttributeBySelector("#page-panel", "aria-label", t(currentLanguage, "pagePanelAriaLabel"));
+  pageController?.updateBorderAreaLabels();
+  const label = toolboxPageItem.querySelector(".toolbox-item__label");
+  if (label) label.textContent = t(currentLanguage, "pageToolboxLabel");
+  if (pageNameInput) {
+    pageNameInput.placeholder = t(currentLanguage, "pageNamePlaceholder");
+    pageNameInput.title = t(currentLanguage, "pageNamePlaceholder");
+  }
+  if (pageDescInput) {
+    pageDescInput.placeholder = t(currentLanguage, "pageDescriptionPlaceholder");
+    pageDescInput.title = t(currentLanguage, "pageDescriptionPlaceholder");
+  }
+
   canvas.setAttribute("aria-label", t(currentLanguage, "canvasAriaLabel"));
   setAttributeBySelector("#canvas .graph-zoom-overlay", "aria-label", t(currentLanguage, "zoomOverlayAriaLabel"));
   quizPreviewResizer.setAttribute("aria-label", t(currentLanguage, "quizPreviewResizerAria"));
@@ -1753,6 +2338,7 @@ const applyLanguageToStaticUi = (): void => {
   applyLanguageParticipantDialog();
   applyLanguageQuizAbortDialog();
   renderQuizTaskOptions();
+  renderEditorPages();
 };
 
 const refreshActiveQuizTaskView = (): void => {
@@ -1775,7 +2361,7 @@ languageToggleButton.addEventListener("click", () => {
 toolbarUi.formatSelect.addEventListener("change", () => {
   void getCurrentAdapter();
   if (isQuizModeActive && quizSession.isActive() && isGraphQuizTask(quizSession.getActiveTask())) {
-    dataPanel.setDataText(getCurrentAdapter().serialize(currentGraph));
+    dataPanel.setDataText(serializeGraphForCurrentFormat());
   }
 });
 
@@ -1788,4 +2374,6 @@ installDataAreaResize({
 updateTimerLabel();
 applyTaskEditability();
 setQuizModeActive(false);
+updateEditorModeToggleButton();
+renderEditorPages();
 applyLanguageToStaticUi();

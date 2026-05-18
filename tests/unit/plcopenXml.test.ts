@@ -238,6 +238,49 @@ describe("PLCopenXML format", () => {
       expect(xml).toContain('localId="1"');
       expect(xml).toContain('localId="2"');
     });
+
+    it("serializes page-oriented metadata when pages are present", () => {
+      const graph = createGraph(
+        [
+          Object.assign(createNode("N1", "input", 1, 8, { label: "In" }), { pageId: 0, pageArea: "contentLeft" }),
+          Object.assign(createNode("N2", "box", 34, 6, { label: "Box" }), { pageId: 0, pageArea: "content" }),
+        ],
+        [],
+      ) as typeof graph & { pages: Array<{ name: string; description: string; marginWidth: number; width: number; height: number }> };
+
+      graph.pages = [
+        { name: "1. Page", description: "", marginWidth: 12, width: 72, height: 96 },
+      ];
+
+      const xml = plcopenXmlFormat.serialize(graph as never);
+
+      expect(xml).toContain('page-oriented="true"');
+      expect(xml).toContain('<page name="1. Page" description="" marginwidth="12" width="72" height="96" index="0" xmlns="" />');
+      expect(xml).toContain('<pageInfo pageId="0" pageArea="contentLeft" xmlns="" />');
+    });
+
+    it("includes declaration variables in the interface for page-oriented graphs", () => {
+      const graph = createGraph(
+        [
+          Object.assign(createNode("N1", "input", 1, 8, { label: "In" }), { pageId: 0, pageArea: "contentLeft" }),
+        ],
+        [],
+      ) as typeof graph & { pages: Array<{ name: string; description: string; marginWidth: number; width: number; height: number }> };
+
+      graph.pages = [
+        { name: "1. Page", description: "", marginWidth: 12, width: 72, height: 96 },
+      ];
+      graph.declarations = "PROGRAM CFC\nVAR\nFoo : INT;\nBar : BOOL;\nEND_VAR";
+
+      const xml = plcopenXmlFormat.serialize(graph as never);
+
+      expect(xml).toContain('page-oriented="true"');
+      expect(xml).toContain('<variable name="Foo">');
+      expect(xml).toContain('<variable name="Bar">');
+      expect(xml).toContain('<INT />');
+      expect(xml).toContain('<BOOL />');
+      expect(xml).toContain('<variable name="In">');
+    });
   });
 
   describe("deserialization", () => {
@@ -307,6 +350,61 @@ describe("PLCopenXML format", () => {
         y: 0,
       });
       expect(graph.declarations).toContain("In : INT;");
+    });
+
+    it("parses page-oriented PLCopenXML metadata", () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <types>
+    <dataTypes />
+    <pous>
+      <pou name="CFC" pouType="program">
+        <interface><localVars /></interface>
+        <body>
+          <ST><xhtml xmlns="http://www.w3.org/1999/xhtml" /></ST>
+          <addData>
+            <data name="http://www.3s-software.com/plcopenxml/cfc" handleUnknown="implementation">
+              <CFC page-oriented="true">
+                <vendorElement localId="0">
+                  <position x="0" y="0" />
+                  <alternativeText><xhtml xmlns="http://www.w3.org/1999/xhtml">page</xhtml></alternativeText>
+                  <addData>
+                    <data name="http://www.3s-software.com/plcopenxml/cfcpage" handleUnknown="implementation">
+                      <page name="1. Page" description="" marginwidth="12" width="72" height="96" index="0" xmlns="" />
+                    </data>
+                  </addData>
+                </vendorElement>
+                <inVariable localId="1">
+                  <position x="1" y="8" />
+                  <connectionPointOut><expression /></connectionPointOut>
+                  <expression>In</expression>
+                  <addData>
+                    <data name="http://www.3s-software.com/plcopenxml/cfcpageinfo" handleUnknown="implementation">
+                      <pageInfo pageId="0" pageArea="contentLeft" xmlns="" />
+                    </data>
+                  </addData>
+                </inVariable>
+              </CFC>
+            </data>
+          </addData>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances><configurations /></instances>
+</project>`;
+
+      const result = plcopenXmlFormat.deserialize(xml);
+
+      expect((result.graph as { pages?: unknown[] }).pages).toHaveLength(1);
+      expect(result.graph.nodes[0]).toMatchObject({
+        type: "input",
+        label: "In",
+        x: 1,
+        y: 8,
+        pageId: 0,
+        pageArea: "contentLeft",
+      });
     });
 
     it("reports an unknown node type", () => {

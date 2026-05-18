@@ -265,10 +265,37 @@ body[data-theme="dark"] .canvas {
   background: #1b1f27;
 }
 
-body[data-theme="dark"] .cfc-graph-layer {
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+body[data-theme="dark"] .graph-border-area {
+  background: #20242c;
+}
+
+body[data-theme="dark"] .graph-border-node {
+  border-color: #445066;
+  background: #171c24;
+  color: #d9e2f2;
+}
+
+body[data-theme="dark"] .graph-border-area--left {
+  border-right-color: #3a4250;
+}
+
+body[data-theme="dark"] .graph-border-area--right {
+  border-left-color: #3a4250;
+}
+
+body[data-theme="dark"] .cfc-graph-layer,
+body[data-theme="dark"] .cfc-page-background {
+  --grid-line-color: rgba(255, 255, 255, 0.08);
+}
+
+body[data-theme="dark"] .graph-stage.page-mode .cfc-graph-layer {
+  background: #1a1e26;
+}
+
+body[data-theme="dark"] .graph-stage.page-mode .cfc-graph-layer::before,
+body[data-theme="dark"] .graph-stage.page-mode .cfc-graph-layer::after {
+  background: #26293a;
+  border-color: #444c63;
 }
 
 body[data-theme="dark"] .graph-zoom-overlay {
@@ -411,4 +438,51 @@ body[data-theme="dark"] .declaration-error {
 
 body[data-theme="dark"] .data-error {
   text-decoration-color: #ff7b7b;
+}
+
+body[data-theme="dark"] .page-panel {
+  border-right-color: #3a4250;
+  background: #20242c;
+}
+
+body[data-theme="dark"] .page-header {
+  border-bottom-color: #3a4250;
+  background: #20242c;
+}
+
+body[data-theme="dark"] .page-name-input,
+body[data-theme="dark"] .page-desc-input {
+  border-color: #4b5568;
+  background: #171b22;
+  color: #e7ecf8;
+}
+
+body[data-theme="dark"] .page-list {
+  gap: 6px;
+}
+
+body[data-theme="dark"] .page-item {
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(75, 69, 80, 0.12);
+  background: transparent;
+  color: #cfe0ff;
+}
+
+body[data-theme="dark"] .page-item.active {
+  background: #2f3f61;
+  border-color: #7ea1ff;
+  color: #eef3ff;
+}
+
+body[data-theme="dark"] .page-drop-zone.is-over {
+  border-color: #7ea1ff;
+  background: #2f3f61;
+}
+
+body[data-theme="dark"] .page-panel__actions button {
+  background: #242a34;
+  border-color: #4b5568;
+  color: #d1d7e5;
 }

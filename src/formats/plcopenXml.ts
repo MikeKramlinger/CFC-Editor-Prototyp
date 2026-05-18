@@ -19,6 +19,24 @@ const OBJECT_ID_DATA_NAME = "http://www.3s-software.com/plcopenxml/objectid";
 const PROJECT_STRUCTURE_DATA_NAME = "http://www.3s-software.com/plcopenxml/projectstructure";
 
 type ConnectionMode = "operator" | "functionblock";
+type PageArea = "contentLeft" | "content" | "contentRight";
+
+interface PlcopenPageMeta {
+  name: string;
+  description: string;
+  marginWidth: number;
+  width: number;
+  height: number;
+}
+
+interface PlcopenPagedNode extends CfcNode {
+  pageId?: number;
+  pageArea?: PageArea;
+}
+
+interface PlcopenPagedGraph extends CfcGraph {
+  pages?: PlcopenPageMeta[];
+}
 
 interface IncomingRef {
   targetInputIndex: number;
@@ -31,10 +49,18 @@ interface ParsedOgNode {
   node: CfcNode;
   executionOrder: number;
   sourceIndex: number;
+  pageId?: number | null;
+  pageArea?: PageArea | null;
   inputNames: string[];
   outputNames: string[];
   incomingRefs: IncomingRef[];
   validationErrors: FormatError[];
+}
+
+interface ParsedPageMeta {
+  localId: string;
+  sourceIndex: number;
+  page: PlcopenPageMeta;
 }
 
 interface ConnectorRef {
@@ -193,6 +219,110 @@ const parseTextFromXhtml = (element: Element, fallback: string): string => {
   return xhtml?.textContent?.trim() || fallback;
 };
 
+const parsePageArea = (value: string | null | undefined): PageArea | null => {
+  if (value === "contentLeft" || value === "content" || value === "contentRight") {
+    return value;
+  }
+  return null;
+};
+
+const parsePageMetaElement = (element: Element, sourceIndex: number): ParsedPageMeta | null => {
+  const pageElement = element.getElementsByTagNameNS("*", "page").item(0);
+  if (!pageElement) {
+    return null;
+  }
+
+  const localId = element.getAttribute("localId") ?? String(sourceIndex);
+  return {
+    localId,
+    sourceIndex,
+    page: {
+      name: (pageElement.getAttribute("name") ?? "").trim() || `Page ${sourceIndex + 1}`,
+      description: (pageElement.getAttribute("description") ?? "").trim(),
+      marginWidth: Number(pageElement.getAttribute("marginwidth") ?? "12") || 12,
+      width: Number(pageElement.getAttribute("width") ?? "72") || 72,
+      height: Number(pageElement.getAttribute("height") ?? "96") || 96,
+    },
+  };
+};
+
+const parseNodePageInfo = (element: Element): { pageId: number | null; pageArea: PageArea | null } => {
+  const pageInfo = element.getElementsByTagNameNS("*", "pageInfo").item(0);
+  if (!pageInfo) {
+    return { pageId: null, pageArea: null };
+  }
+
+  const rawPageId = Number(pageInfo.getAttribute("pageId"));
+  const pageId = Number.isFinite(rawPageId) && rawPageId >= 0 ? Math.floor(rawPageId) : null;
+  return {
+    pageId,
+    pageArea: parsePageArea(pageInfo.getAttribute("pageArea")),
+  };
+};
+
+const getPageAreaForNode = (node: PlcopenPagedNode, page: PlcopenPageMeta | undefined): PageArea => {
+  if (node.pageArea) {
+    return node.pageArea;
+  }
+  if (!page) {
+    return "content";
+  }
+
+  const leftEdge = page.marginWidth;
+  const rightEdge = page.width - page.marginWidth;
+  const nodeLeft = node.x;
+  const nodeRight = node.x + node.width;
+
+  if (nodeRight <= leftEdge) {
+    return "contentLeft";
+  }
+  if (nodeLeft >= rightEdge) {
+    return "contentRight";
+  }
+  return "content";
+};
+
+const createPageInfoData = (doc: Document, pageId: number, pageArea: PageArea): Element => {
+  const data = doc.createElementNS(NAMESPACE, "data");
+  data.setAttribute("name", "http://www.3s-software.com/plcopenxml/cfcpageinfo");
+  data.setAttribute("handleUnknown", "implementation");
+  const pageInfo = doc.createElementNS(NAMESPACE, "pageInfo");
+  pageInfo.setAttribute("pageId", String(pageId));
+  pageInfo.setAttribute("pageArea", pageArea);
+  pageInfo.setAttribute("xmlns", "");
+  data.append(pageInfo);
+  return data;
+};
+
+const createPageMetaData = (doc: Document, page: PlcopenPageMeta, index: number): Element => {
+  const vendorElement = doc.createElementNS(NAMESPACE, "vendorElement");
+  vendorElement.setAttribute("localId", String(index));
+  appendPosition(doc, vendorElement, 0, 0);
+
+  const alternativeText = doc.createElementNS(NAMESPACE, "alternativeText");
+  const xhtml = doc.createElementNS("http://www.w3.org/1999/xhtml", "xhtml");
+  xhtml.textContent = "page";
+  alternativeText.append(xhtml);
+  vendorElement.append(alternativeText);
+
+  const addData = doc.createElementNS(NAMESPACE, "addData");
+  const data = doc.createElementNS(NAMESPACE, "data");
+  data.setAttribute("name", "http://www.3s-software.com/plcopenxml/cfcpage");
+  data.setAttribute("handleUnknown", "implementation");
+  const pageElement = doc.createElementNS(NAMESPACE, "page");
+  pageElement.setAttribute("name", page.name);
+  pageElement.setAttribute("description", page.description);
+  pageElement.setAttribute("marginwidth", String(page.marginWidth));
+  pageElement.setAttribute("width", String(page.width));
+  pageElement.setAttribute("height", String(page.height));
+  pageElement.setAttribute("index", String(index));
+  pageElement.setAttribute("xmlns", "");
+  data.append(pageElement);
+  addData.append(data);
+  vendorElement.append(addData);
+  return vendorElement;
+};
+
 const parseInterfaceDeclarations = (xml: Document): string | null => {
   const localVars = xml.getElementsByTagNameNS("*", "localVars").item(0);
   if (!localVars) {
@@ -260,8 +390,13 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
     return null;
   }
 
+  if (element.localName === "vendorElement" && parsePageMetaElement(element, sourceIndex)) {
+    return null;
+  }
+
   const line = sourceIndex + 1;
   const position = getPosition(element);
+  const pageInfo = parseNodePageInfo(element);
   const rawExecutionOrder = element.getAttribute("executionOrderId");
   let executionOrder = sourceIndex + 1;
   if (rawExecutionOrder !== null) {
@@ -280,6 +415,8 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       localId,
       executionOrder,
       sourceIndex,
+      pageId: pageInfo.pageId,
+      pageArea: pageInfo.pageArea,
       inputNames: [],
       outputNames: ["Out1"],
       incomingRefs: [],
@@ -304,6 +441,8 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       localId,
       executionOrder,
       sourceIndex,
+      pageId: pageInfo.pageId,
+      pageArea: pageInfo.pageArea,
       inputNames: ["In1"],
       outputNames: [],
       incomingRefs: parseIncomingSingleRef(element),
@@ -327,6 +466,8 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       localId,
       executionOrder,
       sourceIndex,
+      pageId: pageInfo.pageId,
+      pageArea: pageInfo.pageArea,
       inputNames: [],
       outputNames: [],
       incomingRefs: [],
@@ -350,6 +491,8 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       localId,
       executionOrder,
       sourceIndex,
+      pageId: pageInfo.pageId,
+      pageArea: pageInfo.pageArea,
       inputNames: ["In1"],
       outputNames: [],
       incomingRefs: parseIncomingSingleRef(element),
@@ -373,6 +516,8 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       localId,
       executionOrder,
       sourceIndex,
+      pageId: pageInfo.pageId,
+      pageArea: pageInfo.pageArea,
       inputNames: [],
       outputNames: [],
       incomingRefs: [],
@@ -395,6 +540,8 @@ const parseCfcNodeElement = (element: Element, sourceIndex: number): ParsedOgNod
       localId,
       executionOrder,
       sourceIndex,
+      pageId: pageInfo.pageId,
+      pageArea: pageInfo.pageArea,
       inputNames: ["In1"],
       outputNames: [],
       incomingRefs: parseIncomingSingleRef(element),
@@ -626,6 +773,33 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     interfaceElement.append(localVars);
     pou.append(interfaceElement);
 
+    const interfaceVariableNames = new Set<string>();
+    const appendInterfaceVariable = (name: string, typeName: string, isElementary: boolean): void => {
+      const trimmedName = name.trim();
+      const trimmedType = typeName.trim();
+      if (!trimmedName || !trimmedType || interfaceVariableNames.has(trimmedName)) {
+        return;
+      }
+
+      interfaceVariableNames.add(trimmedName);
+      const variable = doc.createElementNS(NAMESPACE, "variable");
+      variable.setAttribute("name", trimmedName);
+      const typeElement = doc.createElementNS(NAMESPACE, "type");
+      if (isElementary) {
+        typeElement.append(doc.createElementNS(NAMESPACE, trimmedType));
+      } else {
+        const derived = doc.createElementNS(NAMESPACE, "derived");
+        derived.setAttribute("name", trimmedType);
+        typeElement.append(derived);
+      }
+      variable.append(typeElement);
+      localVars.append(variable);
+    };
+
+    parseDeclarations(graph.declarations).variables.forEach((variable) => {
+      appendInterfaceVariable(variable.name, variable.type, variable.isElementary);
+    });
+
     const body = doc.createElementNS(NAMESPACE, "body");
     const st = doc.createElementNS(NAMESPACE, "ST");
     // Create xhtml with XHTML namespace - don't add xmlns attribute separately
@@ -638,6 +812,36 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     cfcData.setAttribute("name", "http://www.3s-software.com/plcopenxml/cfc");
     cfcData.setAttribute("handleUnknown", "implementation");
     const cfc = doc.createElementNS(NAMESPACE, "CFC");
+
+    const pagedGraph = graph as PlcopenPagedGraph;
+    const explicitPages = pagedGraph.pages ?? [];
+    const pageOriented =
+      explicitPages.length > 0 || graph.nodes.some((node) => {
+        const pagedNode = node as PlcopenPagedNode;
+        return pagedNode.pageId !== undefined || pagedNode.pageArea !== undefined;
+      });
+
+    const pages = pageOriented
+      ? (explicitPages.length > 0
+        ? explicitPages
+        : [
+          {
+            name: "1. Page",
+            description: "",
+            marginWidth: 12,
+            width: 72,
+            height: 96,
+          },
+        ])
+      : [];
+    const pageCount = pages.length;
+
+    if (pageOriented) {
+      cfc.setAttribute("page-oriented", "true");
+      pages.forEach((page, index) => {
+        cfc.append(createPageMetaData(doc, page, index));
+      });
+    }
 
     const localIdByNodeId = new Map<string, string>();
     const nodeNameByNodeId = new Map<string, string>(); // Store the "source name" for each node
@@ -659,7 +863,7 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     };
     
     graph.nodes.forEach((node, index) => {
-      localIdByNodeId.set(node.id, fallbackLocalId(node.id, index));
+      localIdByNodeId.set(node.id, fallbackLocalId(node.id, pageCount + index));
       // Store the name that will be used as formalParameter in connections
       nodeNameByNodeId.set(node.id, node.label);
       // Store output names for each node type
@@ -694,12 +898,16 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
     let executionOrderIndex = 0;
     graph.nodes.forEach((node, index) => {
       const localId = localIdByNodeId.get(node.id) ?? String(index);
+      const pageId = typeof (node as PlcopenPagedNode).pageId === "number" ? (node as PlcopenPagedNode).pageId! : 0;
+      const page = pages[pageId] ?? pages[0];
       const executionOrder = isExecutionOrderedNode(node)
         ? (typeof node.executionOrder === "number" ? Math.max(1, Math.floor(node.executionOrder)) : executionOrderIndex + 1)
         : executionOrderIndex + 1;
       if (isExecutionOrderedNode(node)) {
         executionOrderIndex++;
       }
+
+      const nodePageArea = pageOriented ? getPageAreaForNode(node as PlcopenPagedNode, page) : null;
 
       if (node.type === "input") {
         const inVariable = doc.createElementNS(NAMESPACE, "inVariable");
@@ -712,16 +920,15 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
         const expression = doc.createElementNS(NAMESPACE, "expression");
         expression.textContent = node.label;
         inVariable.append(expression);
+        if (pageOriented && nodePageArea) {
+          const addData = doc.createElementNS(NAMESPACE, "addData");
+          addData.append(createPageInfoData(doc, pageId, nodePageArea));
+          inVariable.append(addData);
+        }
         cfc.append(inVariable);
         nodeElementByNodeId.set(node.id, inVariable);
         // interface variable for input: include type -> INT
-        const ifaceVar = doc.createElementNS(NAMESPACE, "variable");
-        ifaceVar.setAttribute("name", node.label);
-        const ifaceType = doc.createElementNS(NAMESPACE, "type");
-        const intElem = doc.createElementNS(NAMESPACE, "INT");
-        ifaceType.append(intElem);
-        ifaceVar.append(ifaceType);
-        localVars.append(ifaceVar);
+        appendInterfaceVariable(node.label, "INT", true);
         inputConnectionTargets.set(node.id, []);
         return;
       }
@@ -740,16 +947,15 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
         const expression = doc.createElementNS(NAMESPACE, "expression");
         expression.textContent = node.label;
         outVariable.append(expression);
+        if (pageOriented && nodePageArea) {
+          const addData = doc.createElementNS(NAMESPACE, "addData");
+          addData.append(createPageInfoData(doc, pageId, nodePageArea));
+          outVariable.append(addData);
+        }
         cfc.append(outVariable);
         nodeElementByNodeId.set(node.id, outVariable);
         // interface variable for output: include type -> INT
-        const ifaceVarOut = doc.createElementNS(NAMESPACE, "variable");
-        ifaceVarOut.setAttribute("name", node.label);
-        const ifaceTypeOut = doc.createElementNS(NAMESPACE, "type");
-        const intElemOut = doc.createElementNS(NAMESPACE, "INT");
-        ifaceTypeOut.append(intElemOut);
-        ifaceVarOut.append(ifaceTypeOut);
-        localVars.append(ifaceVarOut);
+        appendInterfaceVariable(node.label, "INT", true);
         inputConnectionTargets.set(node.id, [connectionPointIn]);
         return;
       }
@@ -766,6 +972,11 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
         xhtml.textContent = node.label;
         content.append(xhtml);
         comment.append(content);
+        if (pageOriented && nodePageArea) {
+          const addData = doc.createElementNS(NAMESPACE, "addData");
+          addData.append(createPageInfoData(doc, pageId, nodePageArea));
+          comment.append(addData);
+        }
         cfc.append(comment);
         nodeElementByNodeId.set(node.id, comment);
         inputConnectionTargets.set(node.id, []);
@@ -784,6 +995,11 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
         relPosition.setAttribute("y", "0");
         connectionPointIn.append(relPosition);
         jump.append(connectionPointIn);
+        if (pageOriented && nodePageArea) {
+          const addData = doc.createElementNS(NAMESPACE, "addData");
+          addData.append(createPageInfoData(doc, pageId, nodePageArea));
+          jump.append(addData);
+        }
         cfc.append(jump);
         nodeElementByNodeId.set(node.id, jump);
         inputConnectionTargets.set(node.id, [connectionPointIn]);
@@ -801,6 +1017,11 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
         relPosition.setAttribute("y", "0");
         connectionPointIn.append(relPosition);
         returnElement.append(connectionPointIn);
+        if (pageOriented && nodePageArea) {
+          const addData = doc.createElementNS(NAMESPACE, "addData");
+          addData.append(createPageInfoData(doc, pageId, nodePageArea));
+          returnElement.append(addData);
+        }
         cfc.append(returnElement);
         nodeElementByNodeId.set(node.id, returnElement);
         inputConnectionTargets.set(node.id, [connectionPointIn]);
@@ -813,6 +1034,11 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
         label.setAttribute("executionOrderId", String(executionOrder));
         label.setAttribute("label", node.label);
         appendPosition(doc, label, node.x, node.y);
+        if (pageOriented && nodePageArea) {
+          const addData = doc.createElementNS(NAMESPACE, "addData");
+          addData.append(createPageInfoData(doc, pageId, nodePageArea));
+          label.append(addData);
+        }
         cfc.append(label);
         nodeElementByNodeId.set(node.id, label);
         inputConnectionTargets.set(node.id, []);
@@ -873,6 +1099,9 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
 
         const addData = doc.createElementNS(NAMESPACE, "addData");
         addData.append(createPlainElementTypeData(doc, elementType));
+        if (pageOriented && nodePageArea) {
+          addData.append(createPageInfoData(doc, pageId, nodePageArea));
+        }
         vendorElement.append(addData);
 
         cfc.append(vendorElement);
@@ -928,20 +1157,16 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
 
       const addData = doc.createElementNS(NAMESPACE, "addData");
       addData.append(createCallTypeData(doc, "functionblock"));
+      if (pageOriented && nodePageArea) {
+        addData.append(createPageInfoData(doc, pageId, nodePageArea));
+      }
       block.append(addData);
 
       cfc.append(block);
       nodeElementByNodeId.set(node.id, block);
       inputConnectionTargets.set(node.id, targets);
       // add interface variable for block instance
-      const ifaceVar = doc.createElementNS(NAMESPACE, "variable");
-      ifaceVar.setAttribute("name", instanceName);
-      const typeElemB = doc.createElementNS(NAMESPACE, "type");
-      const derivedB = doc.createElementNS(NAMESPACE, "derived");
-      derivedB.setAttribute("name", typeName);
-      typeElemB.append(derivedB);
-      ifaceVar.append(typeElemB);
-      localVars.append(ifaceVar);
+      appendInterfaceVariable(instanceName, typeName, false);
     });
 
     // Create connectors and insert them before their target elements
@@ -1052,6 +1277,21 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
       const cfc = xml.getElementsByTagNameNS("*", "CFC").item(0);
       if (!cfc) return createDeserializeResult(graph, []);
 
+      const parsedPages = Array.from(cfc.children)
+        .map((child, index) => {
+          try {
+            return parsePageMetaElement(child, index);
+          } catch {
+            return null;
+          }
+        })
+        .filter((entry): entry is ParsedPageMeta => entry !== null)
+        .sort((a, b) => a.sourceIndex - b.sourceIndex);
+
+      if (parsedPages.length > 0) {
+        (graph as PlcopenPagedGraph).pages = parsedPages.map((entry) => entry.page);
+      }
+
       const connectors = parseConnectorRefs(cfc);
 
       const parsedNodes = Array.from(cfc.children)
@@ -1070,6 +1310,13 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
 
       for (const entry of parsedNodes) {
         fitNodeWidthToLabel(entry.node);
+        const pageNode = entry.node as PlcopenPagedNode;
+        if (entry.pageId !== null) {
+          pageNode.pageId = entry.pageId;
+        }
+        if (entry.pageArea) {
+          pageNode.pageArea = entry.pageArea;
+        }
         graph.nodes.push(entry.node);
       }
 
@@ -1095,6 +1342,27 @@ export const plcopenXmlFormat: CfcFormatAdapter = {
       }
 
       graph.nodes = graph.nodes.map((node) => (isCfcNodeType(node.type) ? node : { ...node, type: "box" }));
+
+      if ((graph as PlcopenPagedGraph).pages?.length) {
+        const nodePageMap = new Map<number, PlcopenPagedNode[]>();
+        graph.nodes.forEach((node) => {
+          const pageNode = node as PlcopenPagedNode;
+          const pageId = typeof pageNode.pageId === "number" ? pageNode.pageId : 0;
+          const bucket = nodePageMap.get(pageId) ?? [];
+          bucket.push(pageNode);
+          nodePageMap.set(pageId, bucket);
+        });
+
+        graph.connections.forEach((connection) => {
+          const sourceNode = graph.nodes.find((node) => node.id === connection.fromNodeId) as PlcopenPagedNode | undefined;
+          if (sourceNode && typeof sourceNode.pageId === "number") {
+            const pageArea = sourceNode.pageArea ?? null;
+            if (pageArea) {
+              sourceNode.pageArea = pageArea;
+            }
+          }
+        });
+      }
 
       graph.declarations = parseInterfaceDeclarations(xml) ?? deriveDeclarationsFromNodes(graph.nodes);
 

@@ -57,6 +57,7 @@ export interface ToolbarControllerOptions {
   formatRoundtripMetric?: (sizeKb: number, elapsedMs: number) => string;
   getCurrentAdapter: () => CfcFormatAdapter;
   getCurrentGraph: () => CfcGraph;
+  getSerializedGraph?: () => string;
   setCurrentGraph: (graph: CfcGraph) => void;
   loadGraph: (graph: CfcGraph) => void;
   getDataText: () => string;
@@ -115,7 +116,7 @@ export const createToolbarController = (options: ToolbarControllerOptions): Tool
 
   const triggerExport = (): void => {
     const adapter = options.getCurrentAdapter();
-    const payload = adapter.serialize(options.getCurrentGraph());
+    const payload = options.getSerializedGraph?.() ?? adapter.serialize(options.getCurrentGraph());
     options.setDataText(payload);
     options.setDataFormatErrors?.([]);
     const sizeKb = getPayloadSizeKb(payload);

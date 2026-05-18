@@ -5,6 +5,8 @@ import {
   type CfcGraph,
   type CfcNode,
   type CfcNodeType,
+  LEFT_BORDER_ALLOWED_TYPES,
+  RIGHT_BORDER_ALLOWED_TYPES,
 } from "./model.js";
 import type { Variable } from "./declarations/index.js";
 import { parseDeclarations, syncCreatedNodeDeclaration } from "./declarations/index.js";
@@ -85,9 +87,15 @@ const JUMP_INPUT_PORT_CENTER_OFFSET_PX = 5;
 const BEND_PENALTY = 25;
 const SEARCH_MARGIN = 12;
 
+// Konstanten für den seitenorientierten Bereich
+export const PAGE_GRAPH_MAX_X = 72;
+export const PAGE_GRAPH_MAX_Y = 96;
+export const PAGE_MARGIN_WIDTH = 10;
+
 export class CfcEditor {
   private readonly canvas: HTMLDivElement;
   private readonly graphLayer: HTMLDivElement;
+  private readonly pageBackgroundLayer: HTMLDivElement;
   private readonly contentLayer: HTMLDivElement;
   private readonly svg: SVGSVGElement;
   private readonly fallbackOverlaySvg: SVGSVGElement;
@@ -99,6 +107,7 @@ export class CfcEditor {
 
   private graph: CfcGraph;
   private currentVariables: Variable[] = [];
+  private isPageBounded = false;
   private readonly selectedNodeIds = new Set<string>();
   private readonly selectedConnectionIds = new Set<string>();
   private routingMode: RoutingMode = "astar";
@@ -175,15 +184,17 @@ export class CfcEditor {
     this.ensureUniqueGraphIds();
     this.normalizeExecutionOrderValues();
 
-    // Parse Deklarationen
     const declarations = parseDeclarations(this.graph.declarations);
     this.currentVariables = declarations.variables;
 
     this.graphLayer = document.createElement("div");
     this.graphLayer.className = "cfc-graph-layer";
+    this.pageBackgroundLayer = document.createElement("div");
+    this.pageBackgroundLayer.className = "cfc-page-background";
     this.contentLayer = document.createElement("div");
     this.contentLayer.style.position = "absolute";
     this.contentLayer.style.inset = "0";
+    this.contentLayer.style.zIndex = "2";
     this.svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     this.fallbackOverlaySvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     this.fallbackOverlaySvg.style.pointerEvents = "none";
@@ -197,7 +208,7 @@ export class CfcEditor {
     this.selectionBox.style.display = "none";
 
     this.contentLayer.append(this.svg, this.nodeLayer, this.fallbackOverlaySvg, this.selectionBox);
-    this.graphLayer.append(this.contentLayer);
+    this.graphLayer.append(this.pageBackgroundLayer, this.contentLayer);
     this.canvas.append(this.graphLayer);
     this.nodeEditDialogController = createNodeEditDialogController({
       canvas: this.canvas,
@@ -231,6 +242,7 @@ export class CfcEditor {
       nodeLayer: this.nodeLayer,
       selectionBox: this.selectionBox,
       getIsPointerInsideGraph: () => this.isPointerInsideGraph,
+      getIsPageBounded: () => this.isPageBounded,
       setIsPointerInsideGraph: (value) => {
         this.isPointerInsideGraph = value;
       },
@@ -267,8 +279,9 @@ export class CfcEditor {
       clientToGraphUnitY: this.clientToGraphUnitY.bind(this),
       getPan: () => ({ panX: this.panX, panY: this.panY }),
       setPan: (panX, panY) => {
-        this.panX = panX;
-        this.panY = panY;
+        const clamped = this.clampPanToPage(panX, panY);
+        this.panX = clamped.panX;
+        this.panY = clamped.panY;
       },
       clampPanToPositiveArea,
       applyZoom: this.applyZoom.bind(this),
@@ -300,8 +313,10 @@ export class CfcEditor {
             if (targetNode.x !== x || targetNode.y !== y) {
               this.bumpRoutingCacheVersion();
             }
-            targetNode.x = x;
-            targetNode.y = y;
+            // Allow moving freely across margin/program boundaries while dragging.
+            // Final `borderSide` is resolved on drag end.
+            targetNode.x = this.clampNodeX(x, targetNode.width, undefined, targetNode.type);
+            targetNode.y = this.clampNodeY(y, targetNode.height);
           },
         };
       },
@@ -314,6 +329,20 @@ export class CfcEditor {
       emitGraphChanged: this.emitGraphChanged.bind(this),
       clearSelection: this.clearSelection.bind(this),
     });
+
+    // Sync native scroll events to editor pan when in page mode
+    this.canvas.addEventListener("scroll", () => {
+      if (!this.isPageBounded) return;
+      try {
+        // scrollLeft/Top are positive when scrolled away from origin
+        this.panX = -this.canvas.scrollLeft;
+        this.panY = -this.canvas.scrollTop;
+        this.graphLayer.style.backgroundPosition = `${this.panX}px ${this.panY}px`;
+        this.renderConnections();
+      } catch (e) {
+        // ignore in non-browser test environments
+      }
+    });
     this.render();
   }
 
@@ -323,7 +352,6 @@ export class CfcEditor {
 
   loadGraph(nextGraph: CfcGraph): void {
     this.graph = cloneGraph(nextGraph);
-    // Ensure nodes fit their labels/types when loading from external formats
     this.graph.nodes.forEach((node) => fitNodeWidthToLabel(node));
     this.normalizeExecutionOrderValues();
     this.ensureUniqueGraphIds();
@@ -417,6 +445,13 @@ export class CfcEditor {
     this.render();
   }
 
+  setPageBounded(enabled: boolean): void {
+    this.isPageBounded = enabled;
+    // Re-apply zoom/pan so UI switches to scrollable page layout when enabled
+    this.applyZoom();
+    this.renderConnections();
+  }
+
   toggleRoutingMode(): RoutingMode {
     this.routingMode = this.routingMode === "bezier" ? "astar" : "bezier";
     this.render();
@@ -426,7 +461,7 @@ export class CfcEditor {
   setZoom(nextZoom: number): number {
     const clamped = clampZoom(nextZoom);
     this.zoom = Math.round(clamped * 100) / 100;
-    const clampedPan = clampPanToPositiveArea(this.panX, this.panY);
+    const clampedPan = this.clampPanToPage(this.panX, this.panY);
     this.panX = clampedPan.panX;
     this.panY = clampedPan.panY;
     this.applyZoom();
@@ -462,11 +497,21 @@ export class CfcEditor {
     }
 
     this.zoom = nextViewport.zoom;
-    this.panX = nextViewport.panX;
-    this.panY = nextViewport.panY;
+    const clamped = this.clampPanToPage(nextViewport.panX, nextViewport.panY);
+    this.panX = clamped.panX;
+    this.panY = clamped.panY;
     this.applyZoom();
     this.renderConnections();
     return this.zoom;
+  }
+
+  pan(deltaX: number, deltaY: number): void {
+    const nextPanX = this.panX + deltaX;
+    const nextPanY = this.panY + deltaY;
+    const clamped = this.clampPanToPage(nextPanX, nextPanY);
+    this.panX = clamped.panX;
+    this.panY = clamped.panY;
+    this.applyZoom();
   }
 
   addNode(): void {
@@ -488,6 +533,8 @@ export class CfcEditor {
     if (isExecutionOrderedNode(node)) {
       node.executionOrder = getNextExecutionOrder(this.graph.nodes);
     }
+    node.x = this.clampNodeX(node.x, node.width, node.borderSide, node.type);
+    node.y = this.clampNodeY(node.y, node.height, node.borderSide);
     fitNodeWidthToLabel(node);
     return node;
   }
@@ -548,8 +595,8 @@ export class CfcEditor {
     const node = this.createNodeForType(
       nodeType,
       nextIndex,
-      this.clampUnitToNonNegative(this.lastCursorUnits.x - template.width / 2),
-      this.clampUnitToNonNegative(this.lastCursorUnits.y - template.height / 2),
+      this.lastCursorUnits.x - template.width / 2,
+      this.lastCursorUnits.y - template.height / 2,
     );
     this.commitAddedNode(before, node);
   }
@@ -569,8 +616,8 @@ export class CfcEditor {
     const node = this.createNodeForType(
       nodeType,
       nextIndex,
-      this.clampUnitToNonNegative(centerUnitsX - template.width / 2),
-      this.clampUnitToNonNegative(centerUnitsY - template.height / 2),
+      centerUnitsX - template.width / 2,
+      centerUnitsY - template.height / 2,
     );
     this.commitAddedNode(before, node);
   }
@@ -610,7 +657,6 @@ export class CfcEditor {
     this.selectedNodeIds.clear();
     this.selectedConnectionIds.clear();
     this.connectionDrag = null;
-    // Clear deferred set for deleted connections
     selectedConnectionIds.forEach((connId) => this.deferredAutoRoutingConnectionIds.delete(connId));
     this.finalizeGraphMutation(before, { bumpRoutingCache: true });
     this.options.onStatus?.("Ausgewählte Elemente gelöscht.");
@@ -678,9 +724,16 @@ export class CfcEditor {
       const pastedNode: CfcNode = {
         ...sourceNode,
         id: nextNodeId,
-        x: this.clampUnitToNonNegative(sourceNode.x + resolvedTranslation.translationX),
-        y: this.clampUnitToNonNegative(sourceNode.y + resolvedTranslation.translationY),
+        x: sourceNode.borderSide
+          ? sourceNode.x
+          : sourceNode.x + resolvedTranslation.translationX,
+        y: sourceNode.borderSide
+          ? sourceNode.y
+          : sourceNode.y + resolvedTranslation.translationY,
       };
+
+      pastedNode.x = this.clampNodeX(pastedNode.x, pastedNode.width, pastedNode.borderSide, pastedNode.type);
+      pastedNode.y = this.clampNodeY(pastedNode.y, pastedNode.height, pastedNode.borderSide);
 
       fitNodeWidthToLabel(pastedNode);
       this.graph.nodes.push(pastedNode);
@@ -751,6 +804,8 @@ export class CfcEditor {
 
   private finalizeGraphMutation(before: CfcGraph, options: GraphMutationFinalizeOptions = {}): void {
     this.normalizeExecutionOrderValues();
+    // Ensure all nodes respect page bounds (important when widths/heights changed)
+    this.normalizeAllNodesToGrid();
     this.history.commit(before, this.graph);
     if (options.bumpRoutingCache) {
       this.bumpRoutingCacheVersion();
@@ -855,14 +910,122 @@ export class CfcEditor {
   private applyZoom(): void {
     const gridSizePx = GRID_CELL_PX * this.zoom;
     this.graphLayer.style.setProperty("--grid-size", `${gridSizePx}px`);
+    // expose page constants for CSS to draw margins
+    this.graphLayer.style.setProperty("--page-width-units", String(PAGE_GRAPH_MAX_X));
+    this.graphLayer.style.setProperty("--page-height-units", String(PAGE_GRAPH_MAX_Y));
+    this.graphLayer.style.setProperty("--page-units", String(PAGE_GRAPH_MAX_X));
+    this.graphLayer.style.setProperty("--page-margin-units", String(PAGE_MARGIN_WIDTH));
     this.graphLayer.style.backgroundPosition = `${this.panX}px ${this.panY}px`;
 
     this.contentLayer.style.transformOrigin = "0 0";
-    this.contentLayer.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
+
+    // In page-bounded mode we expose native scrollbars by sizing the graph layer
+    // to the page size in pixels and using the canvas scroll position as the pan.
+    if (this.isPageBounded) {
+      const pageWidthPx = PAGE_GRAPH_MAX_X * GRID_CELL_PX * this.zoom;
+      const pageHeightPx = PAGE_GRAPH_MAX_Y * GRID_CELL_PX * this.zoom;
+      this.graphLayer.style.width = `${pageWidthPx}px`;
+      this.graphLayer.style.height = `${pageHeightPx}px`;
+      // Only scale the content — scrolling will handle the panning
+      this.contentLayer.style.transform = `scale(${this.zoom})`;
+      // Ensure the canvas shows scrollbars
+      this.canvas.style.overflow = "auto";
+      // Sync scroll position to pan values (panX/panY are in px, typically <= 0)
+      // scrollLeft/Top expect positive values where 0 means scrolled to left/top.
+      try {
+        this.canvas.scrollLeft = -this.panX;
+        this.canvas.scrollTop = -this.panY;
+      } catch (e) {
+        // ignore in test environments where scrolling may not be supported
+      }
+    } else {
+      // Normal free canvas mode: use transform translate for pan
+      this.contentLayer.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
+      this.graphLayer.style.width = "";
+      this.graphLayer.style.height = "";
+      this.canvas.style.overflow = "hidden";
+    }
   }
 
   private clampUnitToNonNegative(value: number): number {
     return Math.max(0, this.snapToGrid(value));
+  }
+
+  private clampPanToPage(panX: number, panY: number): { panX: number; panY: number } {
+    if (!this.isPageBounded) {
+      return clampPanToPositiveArea(panX, panY);
+    }
+
+    const rect = this.canvas.getBoundingClientRect();
+    const pageWidthPx = PAGE_GRAPH_MAX_X * GRID_CELL_PX * this.zoom;
+    const pageHeightPx = PAGE_GRAPH_MAX_Y * GRID_CELL_PX * this.zoom;
+
+    const minPanX = Math.min(0, rect.width - pageWidthPx);
+    const minPanY = Math.min(0, rect.height - pageHeightPx);
+
+    const clampedX = Math.max(minPanX, Math.min(0, panX));
+    const clampedY = Math.max(minPanY, Math.min(0, panY));
+    return { panX: clampedX, panY: clampedY };
+  }
+
+  // --- ÜBERARBEITETE CLAMPING LOGIK FÜR DAS 72x96 RASTER ---
+  private clampNodeX(value: number, width: number, borderSide?: "left" | "right", nodeType?: CfcNodeType): number {
+    const snapped = this.snapToGrid(value);
+    if (!this.isPageBounded) {
+      return Math.max(0, snapped);
+    }
+
+    // If node belongs to left/right border area, restrict it to the margin area
+    const leftMarginMax = Math.max(0, PAGE_MARGIN_WIDTH - width);
+    const rightMarginMin = Math.max(0, PAGE_GRAPH_MAX_X - PAGE_MARGIN_WIDTH);
+    const rightMarginMax = Math.max(0, PAGE_GRAPH_MAX_X - width);
+
+    // If node is explicitly assigned to a border side, always clamp it fully into that margin.
+    if (borderSide === "left") {
+      return Math.max(0, Math.min(leftMarginMax, snapped));
+    }
+    if (borderSide === "right") {
+      return Math.max(rightMarginMin, Math.min(rightMarginMax, snapped));
+    }
+
+    const allowedLeft = nodeType ? LEFT_BORDER_ALLOWED_TYPES.includes(nodeType) : false;
+    const allowedRight = nodeType ? RIGHT_BORDER_ALLOWED_TYPES.includes(nodeType) : false;
+
+    // Regular nodes live in the program area between margins
+    // Determine allowed horizontal range based on node type permissions:
+    // - If allowedLeft only: allow left margin + program area (forbid right margin)
+    // - If allowedRight only: allow program area + right margin (forbid left margin)
+    // - If allowed both: allow full width
+    // - If allowed none: restrict to program area
+    const progMin = PAGE_MARGIN_WIDTH;
+    const progMax = Math.max(progMin, PAGE_GRAPH_MAX_X - PAGE_MARGIN_WIDTH - width);
+
+    if (allowedLeft && !allowedRight) {
+      const min = 0;
+      const max = progMax;
+      return Math.max(min, Math.min(max, snapped));
+    }
+    if (allowedRight && !allowedLeft) {
+      const min = progMin;
+      const max = Math.max(0, PAGE_GRAPH_MAX_X - width);
+      return Math.max(min, Math.min(max, snapped));
+    }
+    if (allowedLeft && allowedRight) {
+      const fullMin = 0;
+      const fullMax = Math.max(0, PAGE_GRAPH_MAX_X - width);
+      return Math.max(fullMin, Math.min(fullMax, snapped));
+    }
+
+    return Math.max(progMin, Math.min(progMax, snapped));
+  }
+
+  private clampNodeY(value: number, height: number, borderSide?: "left" | "right"): number {
+    const snapped = this.snapToGrid(value);
+    if (!this.isPageBounded) {
+      return Math.max(0, snapped);
+    }
+    const maxY = Math.max(0, PAGE_GRAPH_MAX_Y - height);
+    return Math.max(0, Math.min(maxY, snapped));
   }
 
   private unitToPx(value: number): number {
@@ -910,8 +1073,17 @@ export class CfcEditor {
         node.type = DEFAULT_NODE_TYPE;
       }
       const template = getNodeTemplateByType(node.type);
-      node.x = this.clampUnitToNonNegative(node.x);
-      node.y = this.clampUnitToNonNegative(node.y);
+      
+      if (this.isPageBounded) {
+        node.x = this.clampNodeX(node.x, node.width, node.borderSide, node.type);
+        node.y = this.clampNodeY(node.y, node.height, node.borderSide);
+      } else {
+        if (!node.borderSide) {
+          node.x = this.clampUnitToNonNegative(node.x);
+        }
+        node.y = this.clampUnitToNonNegative(node.y);
+      }
+      
       if (node.width < template.width) {
         node.width = template.width;
       }
@@ -945,6 +1117,7 @@ export class CfcEditor {
   private getOutputPortPoint(node: CfcNode, portId: string): { x: number; y: number } {
     const template = getNodeTemplateByType(node.type);
     const portIndex = this.getPortIndex(portId, "output");
+    
     return {
       x: node.x + node.width,
       y: this.getPortCenterY(node, portIndex, template.outputCount),
@@ -954,6 +1127,7 @@ export class CfcEditor {
   private getInputPortPoint(node: CfcNode, portId: string): { x: number; y: number } {
     const template = getNodeTemplateByType(node.type);
     const portIndex = this.getPortIndex(portId, "input");
+    
     let inputX = node.x;
     if (node.type === "return") {
       inputX = node.x - node.height / 2;
@@ -961,6 +1135,7 @@ export class CfcEditor {
       // Align with the visual center of the arrow-shaped input port.
       inputX = node.x - JUMP_INPUT_PORT_CENTER_OFFSET_PX / GRID_CELL_PX;
     }
+    
     return {
       x: inputX,
       y: this.getPortCenterY(node, portIndex, template.inputCount),
@@ -1017,9 +1192,19 @@ export class CfcEditor {
   }
 
   private renderNodes(): void {
+    const canvasNodes = this.isPageBounded
+      ? this.graph.nodes.filter(
+          (node) =>
+            node.x >= 0
+            && (node.x + node.width) <= PAGE_GRAPH_MAX_X
+            && node.y >= 0
+            && (node.y + node.height) <= PAGE_GRAPH_MAX_Y,
+        )
+      : this.graph.nodes;
+
     renderNodeLayer({
       nodeLayer: this.nodeLayer,
-      nodes: this.graph.nodes,
+      nodes: canvasNodes,
       selectedNodeIds: this.selectedNodeIds,
       isInteractionLocked: this.isInteractionLocked,
       snapPortYToInteger: this.routingMode === "astar",
@@ -1113,11 +1298,7 @@ export class CfcEditor {
           // 3. Since we can't be certain which cache key the render method will use, 
           // we inject the old manual route into the auto-routing cache under BOTH possible keys.
           const fallbackCacheKey = `${fromNode.id}|${connection.fromPin}|${toNode.id}|${connection.toPin}`;
-          
-          const cacheEntry = {
-            version: this.routingCacheVersion,
-            route: currentRoute.points,
-          };
+          const cacheEntry = { version: this.routingCacheVersion, route: currentRoute.points };
 
           this.astarRouteCache.set(connection.id, cacheEntry);
           this.astarRouteCache.set(fallbackCacheKey, cacheEntry);
@@ -1209,7 +1390,7 @@ export class CfcEditor {
     this.render();
   }
 
-  private startConnectionDrag(
+  startConnectionDrag(
     fromNodeId: string,
     fromPin: string,
     fromPinKind: ConnectionPortKind,
@@ -1737,7 +1918,11 @@ export class CfcEditor {
       const before = this.dragHistoryBefore;
       before.nodes.forEach((oldNode) => {
         const currentNode = this.findNode(oldNode.id);
-        if (currentNode && (oldNode.x !== currentNode.x || oldNode.y !== currentNode.y)) {
+        if (!currentNode) return;
+        const dx = Math.abs((oldNode.x ?? 0) - (currentNode.x ?? 0));
+        const dy = Math.abs((oldNode.y ?? 0) - (currentNode.y ?? 0));
+        // Consider a node moved only if it changed by at least half a unit (to avoid click/rounding noise)
+        if (dx >= 0.5 || dy >= 0.5) {
           movedNodeIds.add(oldNode.id);
         }
       });
@@ -1752,6 +1937,34 @@ export class CfcEditor {
       
       this.clearDeferredAutoRouting(deferredConnectionIdsBefore);
     }
+
+    // Resolve borderSide for nodes based on final x position.
+    movedNodeIds.forEach((nodeId) => {
+      const node = this.findNode(nodeId);
+      if (!node) return;
+      const leftMarginEnd = PAGE_MARGIN_WIDTH;
+      const rightMarginStart = PAGE_GRAPH_MAX_X - PAGE_MARGIN_WIDTH;
+      const nodeLeft = node.x;
+      const nodeRight = node.x + node.width;
+
+      const overlapLeft = Math.max(0, leftMarginEnd - nodeLeft);
+      const overlapRight = Math.max(0, nodeRight - rightMarginStart);
+
+      if (overlapLeft > 0 || overlapRight > 0) {
+        // If both sides overlap pick the one with larger overlap; tie -> prefer the side with larger overlap (left if equal)
+        if (overlapLeft >= overlapRight) {
+          node.borderSide = "left";
+          node.x = this.clampNodeX(node.x, node.width, "left", node.type);
+        } else {
+          node.borderSide = "right";
+          node.x = this.clampNodeX(node.x, node.width, "right", node.type);
+        }
+      } else {
+        if (node.borderSide) delete node.borderSide;
+        node.x = this.clampNodeX(node.x, node.width, undefined, node.type);
+      }
+      node.y = this.clampNodeY(node.y, node.height, node.borderSide);
+    });
 
     this.finalizeNodeDragHistory();
     this.emitGraphChanged();

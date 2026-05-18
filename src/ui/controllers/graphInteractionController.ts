@@ -27,6 +27,7 @@ interface GraphInteractionControllerOptions {
   nodeLayer: HTMLDivElement;
   selectionBox: HTMLDivElement;
   getIsPointerInsideGraph: () => boolean;
+  getIsPageBounded?: () => boolean;
   setIsPointerInsideGraph: (value: boolean) => void;
   setLastCursorUnits: (value: { x: number; y: number } | null) => void;
   getDragState: () => DragState | null;
@@ -77,6 +78,10 @@ export const installGraphInteractionController = (options: GraphInteractionContr
 
   options.canvas.addEventListener("pointerdown", (event) => {
     if (event.button === 2) {
+      // disable panning in page-bounded mode
+      if (options.getIsPageBounded && options.getIsPageBounded()) {
+        return;
+      }
       event.preventDefault();
       options.closeNodeEditDialog();
       const { panX, panY } = options.getPan();

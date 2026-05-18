@@ -42,6 +42,9 @@ export const CFC_NODE_TEMPLATES: CfcNodeTemplate[] = [
 
 export const DEFAULT_NODE_TYPE: CfcNodeType = "box";
 
+export const LEFT_BORDER_ALLOWED_TYPES: CfcNodeType[] = ["input", "connection-mark-sink"];
+export const RIGHT_BORDER_ALLOWED_TYPES: CfcNodeType[] = ["output", "connection-mark-source"];
+
 const nodeTemplateMap = new Map<CfcNodeType, CfcNodeTemplate>(
   CFC_NODE_TEMPLATES.map((template) => [template.type, template]),
 );
@@ -62,6 +65,7 @@ export interface CfcNode {
   type: CfcNodeType;
   executionOrder?: number;
   typeName?: NormalizedNodeName;
+  borderSide?: "left" | "right";
   label: NormalizedNodeName;
   __metadata?: {
     hadExportLabelField?: boolean;

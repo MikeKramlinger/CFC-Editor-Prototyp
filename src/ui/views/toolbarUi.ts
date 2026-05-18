@@ -2,6 +2,7 @@ import { query } from "./domQueryUi.js";
 
 export interface ToolbarUiElements {
   routingModeButton: HTMLButtonElement;
+  editorModeToggleButton: HTMLButtonElement;
   bulkMenuToggleButton: HTMLButtonElement;
   bulkMenu: HTMLDivElement;
   themeToggleButton: HTMLButtonElement;
@@ -23,6 +24,7 @@ export interface ToolbarUiElements {
 
 export const getToolbarUiElements = (): ToolbarUiElements => ({
   routingModeButton: query<HTMLButtonElement>("#routing-mode"),
+  editorModeToggleButton: query<HTMLButtonElement>("#editor-mode-toggle"),
   bulkMenuToggleButton: query<HTMLButtonElement>("#bulk-menu-toggle"),
   bulkMenu: query<HTMLDivElement>("#bulk-menu"),
   themeToggleButton: query<HTMLButtonElement>("#theme-toggle"),

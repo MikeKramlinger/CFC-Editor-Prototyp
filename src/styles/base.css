@@ -316,20 +316,174 @@ input[type="number"]:hover {
   height: 100%;
 }
 
+.workspace.page-mode {
+  /* keep toolbox width equal to normal mode (240px) and add page panel (160px) */
+  grid-template-columns: 240px 160px 1fr;
+}
+
+.page-panel {
+  border-right: 1px solid #d4d7dd;
+  padding: 8px;
+  background: #fbfcfe;
+  overflow: auto;
+}
+
+.page-panel__header {
+  display: none;
+}
+
+.page-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.page-item {
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.page-item.active {
+  background: #eaf0ff;
+  border-color: #2358d4;
+}
+
+.page-drop-zone {
+  width: 100%;
+  height: 4px;
+  margin: 0;
+  border: 1px dashed transparent;
+  border-radius: 0;
+  background: transparent;
+  cursor: copy;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.page-drop-zone.is-over {
+  border-color: #2358d4;
+  background: #eaf0ff;
+}
+
+.page-panel__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .workspace.toolbox-collapsed {
   grid-template-columns: 40px 1fr;
+}
+
+.workspace.page-mode.toolbox-collapsed {
+  grid-template-columns: 40px 160px minmax(0, 1fr);
 }
 
 .graph-stage {
   --quiz-preview-width: 340px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   min-width: 0;
 }
 
+.graph-stage.page-mode {
+  grid-template-columns: 180px minmax(0, 1fr) 180px;
+}
+
 .graph-stage.quiz-preview-visible {
   grid-template-columns: minmax(0, 1fr) 10px minmax(220px, var(--quiz-preview-width));
+}
+
+.graph-stage.page-mode.quiz-preview-visible {
+  grid-template-columns: 180px minmax(0, 1fr) 180px 10px minmax(220px, var(--quiz-preview-width));
+}
+
+.graph-stage:not(.page-mode) > .graph-border-area {
+  display: none;
+}
+
+.graph-stage > .page-header {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.graph-stage > .canvas {
+  grid-column: 1;
+  grid-row: 2;
+  z-index: 2;
+}
+
+.graph-stage.page-mode > .canvas {
+  grid-column: 1 / -1;
+  z-index: 2;
+}
+
+.graph-stage > .graph-border-area {
+  grid-row: 2;
+  min-width: 0;
+  overflow: auto;
+  z-index: 0;
+  background: rgba(247,249,252,0.92);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: calc(var(--grid-size, 24px) * var(--page-height-units, 96));
+  min-height: 0;
+  align-self: start;
+}
+
+.graph-border-area .graph-border-node {
+  position: relative;
+  left: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 6px 10px;
+  cursor: default;
+  user-select: none;
+  overflow: visible;
+}
+
+.graph-border-area .graph-border-node .cfc-node__title,
+.graph-border-area .graph-border-node .cfc-node__id {
+  pointer-events: none;
+}
+
+.graph-stage > .graph-border-area--left {
+  grid-column: 1;
+  border-right: 1px solid #d4d7dd;
+}
+
+.graph-stage > .graph-border-area--right {
+  grid-column: 3;
+  border-left: 1px solid #d4d7dd;
+}
+
+.graph-stage > .quiz-preview-resizer {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.graph-stage > .quiz-expected-preview {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.graph-stage.page-mode > .quiz-preview-resizer {
+  grid-column: 4;
+}
+
+.graph-stage.page-mode > .quiz-expected-preview {
+  grid-column: 5;
 }
 
 .quiz-preview-resizer {
@@ -467,10 +621,59 @@ input[type="number"]:hover {
   --grid-line-color: #eceef2;
   position: absolute;
   inset: 0;
+}
+
+.graph-stage:not(.page-mode) .cfc-graph-layer {
   background-image:
     linear-gradient(to right, var(--grid-line-color) var(--grid-line-width), transparent var(--grid-line-width)),
     linear-gradient(to bottom, var(--grid-line-color) var(--grid-line-width), transparent var(--grid-line-width));
   background-size: var(--grid-size, 24px) var(--grid-size, 24px);
+}
+
+.cfc-page-background {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--grid-size, 24px) * var(--page-width-units, 72));
+  height: calc(var(--grid-size, 24px) * var(--page-height-units, 96));
+  background-image:
+    linear-gradient(to right, var(--grid-line-color) var(--grid-line-width), transparent var(--grid-line-width)),
+    linear-gradient(to bottom, var(--grid-line-color) var(--grid-line-width), transparent var(--grid-line-width));
+  background-size: var(--grid-size, 24px) var(--grid-size, 24px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.graph-stage.page-mode .cfc-page-background {
+  display: block;
+}
+
+.graph-stage.page-mode .cfc-graph-layer {
+  background: #ffffff;
+}
+
+.graph-stage.page-mode .cfc-graph-layer::before,
+.graph-stage.page-mode .cfc-graph-layer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  height: calc(var(--grid-size, 24px) * var(--page-height-units, 96));
+  background: #d9d9d9;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.graph-stage.page-mode .cfc-graph-layer::before {
+  left: 0;
+  width: calc(var(--grid-size) * var(--page-margin-units));
+  border-right: 1px solid #d4d7dd;
+}
+
+.graph-stage.page-mode .cfc-graph-layer::after {
+  left: calc(var(--grid-size) * (var(--page-units) - var(--page-margin-units)));
+  width: calc(var(--grid-size) * var(--page-margin-units));
+  border-left: 1px solid #d4d7dd;
 }
 
 @supports (-moz-appearance: none) {
@@ -1547,4 +1750,56 @@ body.quiz-entry-open .layout {
 .quiz-entry-close-button:focus-visible {
   background: #edf2f8;
   border-color: #98a4b8;
+}
+
+.page-drop-target {
+  border: 1px dashed #c7cbd4;
+  padding: 8px;
+  border-radius: 6px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.toolbox-item--page {
+  display: none;
+}
+.workspace.page-mode .toolbox-item--page {
+  display: flex;
+}
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e6e9ef;
+  background: #ffffff;
+}
+
+.page-name-input,
+.page-desc-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d4d7dd;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #0f172a;
+  pointer-events: auto;
+  caret-color: #16377f;
+  cursor: text;
+}
+
+.page-name-input:focus,
+.page-desc-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(35, 88, 212, 0.08);
+  border-color: #2358d4;
+}
+.workspace.page-mode .page-header {
+  display: block;
+}
+.page-header[hidden] {
+  display: none;
 }
